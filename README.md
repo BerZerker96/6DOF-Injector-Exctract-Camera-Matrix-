@@ -1,4 +1,3 @@
-<img width="629" height="463" alt="2026-06-21 16_54_19-Adobe Photoshop 2025" src="https://github.com/user-attachments/assets/462638cd-9339-4107-880b-f00d63fec5e6" />
 <img width="1584" height="672" alt="Gemini_Generated_Image_uz342suz342suz34" src="https://github.com/user-attachments/assets/63655ae7-633c-4313-a4f2-a24e50310ebb" />
 # 🎯 6DOF Injector + Probe
 
@@ -7,7 +6,7 @@
 
 ---
 
-![Uploading 2026-06-21 16_54_19-Adobe Photoshop 2025.jpg…]()
+<img width="629" height="463" alt="2026-06-21 16_54_19-Adobe Photoshop 2025" src="https://github.com/user-attachments/assets/be8a60ca-acd3-405b-b24b-91fdb543eda9" />
 
 
 
