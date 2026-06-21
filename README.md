@@ -71,8 +71,6 @@ The `MOD BUILD SPEC` block logs everything needed to build the mod:
   factor to scale them by for an **optional FOV override**
 - inject mode + formula, plus a ranked list of the top candidate buffers
 
---
-
 ## License
 
 Standard CreateRemoteThread + LoadLibrary injection and D3D11 vtable hooking. As-is, for research and
