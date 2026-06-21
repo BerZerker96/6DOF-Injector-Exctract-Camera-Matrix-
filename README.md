@@ -1,7 +1,7 @@
 <img width="1584" height="672" alt="Gemini_Generated_Image_uz342suz342suz34" src="https://github.com/user-attachments/assets/63655ae7-633c-4313-a4f2-a24e50310ebb" />
 # 🎯 6DOF Injector + Probe
 
-> Standalone, **portable** tool that hooks any D3D11 game directly (no ReShade) and writes a
+> Standalone, **portable** tool that hooks any game directly and writes a
 > `MOD BUILD SPEC` to a log named after the game. Pick the game from a dropdown, click **INJECT**.
 
 ---
@@ -71,20 +71,7 @@ The `MOD BUILD SPEC` block logs everything needed to build the mod:
   factor to scale them by for an **optional FOV override**
 - inject mode + formula, plus a ranked list of the top candidate buffers
 
----
-
-## Honest limits
-
-- **D3D9 / D3D10 / D3D11 / D3D12** are hooked; **Vulkan** is detected but not yet captured — if your game is
-  Vulkan, tell me and I'll add the `vkMapMemory` hook.
-- D3D12 and D3D9 capture are new and untested on live games; the first run is the proving step. If a
-  game logs `hooks installed` but the spec stays `none`, tell me what API it reported and I'll adjust
-  (likely deferred-context or draw-time capture).
-- Some engines keep the camera CPU-side and never upload a clean view matrix; those need a per-game
-  in-memory mod, not a GPU hook.
-- **Do not use on anti-cheat multiplayer games** — injection can get you banned. Single-player only.
-
----
+--
 
 ## License
 
