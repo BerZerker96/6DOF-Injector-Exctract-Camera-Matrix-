@@ -1,0 +1,454 @@
+================ 6DOF Probe injected (build Jun 21 2026 13:16:26) ================
+game=P5R.exe  arch=64-bit  engine=native/unknown
+API=D3D11  hooks installed - capturing. Report auto-writes every 10s; END=report now, HOME=memory scan.
+
+================== CAMERA REPORT (PROJ=0 VIEW=764 VP=1429, draws-weighted) ==================
+################### MOD BUILD SPEC  (copy this whole block & send it) ###################
+GAME=P5R.exe
+ARCH=64-bit  API=D3D11  ENGINE=native/unknown  FILEVER=?
+RESOLUTION=3840x2160  SCREEN_ASPECT=1.7778
+INJECT_MODE=view  FORMULA=Vnew = R_head * V(3x3); translation -= lean
+CAMERA_DRAWS=112  CAMERA_FREQ=16  (draws = #draw-calls/frame using this camera buffer)
+PROJ=none   # no screen-aspect projection isolated; FOV may live inside the VIEWPROJ (use Pinv route)
+VIEW off=0x40 size=7168 slot=1 layout=col hand=RH translation=col3 recovered=0 draws=112 freq=16
+VIEW_CAMPOS=2522.4966,-12180.3828,11724.9102  VIEW_EULER_PYR=70.000,90.000,90.000
+VIEW_M=0.939693,0.342020,0.000000,1795.565063,0.000000,0.000000,1.000000,-11724.910156,0.342020,-0.939693,0.000000,-12308.561523,0.000000,0.000000,0.000000,1.000000
+VIEWPROJ off=0x30 size=7168 slot=1 layout=row draws=112 freq=8
+VIEWPROJ_M=0.000000,0.000000,0.000000,1.000000,0.939693,0.342020,0.000000,1795.565063,0.000000,0.000000,1.000000,-11724.910156,0.342020,-0.939693,0.000000,-12308.561523
+# TOP VIEW buffers (draws=draw-calls/frame = main-scene weight):
+#   VIEW off=0x40 size=7168 slot=1 layout=col  draws=112 maxfreq=16 distinct=3 hits=8752
+#   VIEW off=0xB40 size=16384 slot=-1 layout=col  draws=0 maxfreq=352 distinct=2 hits=83192
+#   VIEW off=0xB20 size=16384 slot=-1 layout=col  draws=0 maxfreq=344 distinct=2 hits=81264
+#   VIEW off=0xB30 size=16384 slot=-1 layout=col  draws=0 maxfreq=336 distinct=2 hits=79300
+#   VIEW off=0x120 size=16384 slot=-1 layout=col  draws=0 maxfreq=8 distinct=21 hits=344
+# TOP VIEWPROJ buffers (draws=draw-calls/frame = main-scene weight):
+#   VIEWPROJ off=0x10 size=7168 slot=1 layout=row  draws=112 maxfreq=18 distinct=2 hits=6448
+#   VIEWPROJ off=0x30 size=7168 slot=1 layout=row  draws=112 maxfreq=8 distinct=1 hits=1984
+#   VIEWPROJ off=0x20 size=7168 slot=1 layout=row  draws=112 maxfreq=8 distinct=1 hits=1984
+#   VIEWPROJ off=0x23F0 size=16384 slot=-1 layout=row  draws=0 maxfreq=104 distinct=7 hits=18348
+#   VIEWPROJ off=0x23E0 size=16384 slot=-1 layout=row  draws=0 maxfreq=100 distinct=5 hits=8564
+NOTE: the camera buffer is the one with the highest 'draws'. If its offset changes each frame the
+      buffer is transient (the mod re-finds it by size/layout/structure). Probe is read-only (no spin).
+################### END MOD BUILD SPEC ###################
+
+================== CAMERA REPORT (PROJ=0 VIEW=305 VP=395, draws-weighted) ==================
+################### MOD BUILD SPEC  (copy this whole block & send it) ###################
+GAME=P5R.exe
+ARCH=64-bit  API=D3D11  ENGINE=native/unknown  FILEVER=?
+RESOLUTION=3840x2160  SCREEN_ASPECT=1.7778
+INJECT_MODE=view  FORMULA=Vnew = R_head * V(3x3); translation -= lean
+CAMERA_DRAWS=118  CAMERA_FREQ=12  (draws = #draw-calls/frame using this camera buffer)
+PROJ=none   # no screen-aspect projection isolated; FOV may live inside the VIEWPROJ (use Pinv route)
+VIEW off=0x40 size=7168 slot=1 layout=col hand=RH translation=col3 recovered=0 draws=118 freq=12
+VIEW_CAMPOS=2522.4966,-12180.3828,11724.9102  VIEW_EULER_PYR=70.000,90.000,90.000
+VIEW_M=0.939693,0.342020,0.000000,1795.565063,0.000000,0.000000,1.000000,-11724.910156,0.342020,-0.939693,0.000000,-12308.561523,0.000000,0.000000,0.000000,1.000000
+VIEWPROJ off=0x22E0 size=16384 slot=-1 layout=row draws=0 freq=144
+VIEWPROJ_M=0.000006,0.000000,1.000000,-0.003174,-0.000000,-1.000000,0.000000,-16310.745117,0.999999,-0.000000,-0.000006,0.007547,0.000021,0.000000,1.000000,-0.003174
+# TOP VIEW buffers (draws=draw-calls/frame = main-scene weight):
+#   VIEW off=0x40 size=7168 slot=1 layout=col  draws=118 maxfreq=12 distinct=2 hits=16628
+#   VIEW off=0xB40 size=16384 slot=-1 layout=col  draws=0 maxfreq=420 distinct=1 hits=23940
+#   VIEW off=0xAD0 size=16384 slot=-1 layout=col  draws=0 maxfreq=396 distinct=1 hits=22572
+#   VIEW off=0xAC0 size=16384 slot=-1 layout=col  draws=0 maxfreq=396 distinct=1 hits=22572
+#   VIEW off=0xB30 size=16384 slot=-1 layout=col  draws=0 maxfreq=120 distinct=1 hits=6840
+# TOP VIEWPROJ buffers (draws=draw-calls/frame = main-scene weight):
+#   VIEWPROJ off=0x22F0 size=16384 slot=-1 layout=row  draws=0 maxfreq=144 distinct=1 hits=33802
+#   VIEWPROJ off=0x2300 size=16384 slot=-1 layout=row  draws=0 maxfreq=144 distinct=1 hits=33802
+#   VIEWPROJ off=0x22E0 size=16384 slot=-1 layout=row  draws=0 maxfreq=144 distinct=1 hits=33802
+#   VIEWPROJ off=0x1610 size=16384 slot=-1 layout=row  draws=0 maxfreq=12 distinct=6 hits=96
+#   VIEWPROJ off=0x80 size=16384 slot=-1 layout=row  draws=0 maxfreq=12 distinct=6 hits=84
+NOTE: the camera buffer is the one with the highest 'draws'. If its offset changes each frame the
+      buffer is transient (the mod re-finds it by size/layout/structure). Probe is read-only (no spin).
+################### END MOD BUILD SPEC ###################
+
+================== CAMERA REPORT (PROJ=0 VIEW=2122 VP=3015, draws-weighted) ==================
+################### MOD BUILD SPEC  (copy this whole block & send it) ###################
+GAME=P5R.exe
+ARCH=64-bit  API=D3D11  ENGINE=native/unknown  FILEVER=?
+RESOLUTION=3840x2160  SCREEN_ASPECT=1.7778
+INJECT_MODE=view  FORMULA=Vnew = R_head * V(3x3); translation -= lean
+CAMERA_DRAWS=2375  CAMERA_FREQ=18  (draws = #draw-calls/frame using this camera buffer)
+PROJ=none   # no screen-aspect projection isolated; FOV may live inside the VIEWPROJ (use Pinv route)
+VIEW off=0x40 size=7168 slot=1 layout=col hand=RH translation=col3 recovered=0 draws=2375 freq=18
+VIEW_CAMPOS=-5775.1787,-2751.3738,3235.4155  VIEW_EULER_PYR=-0.000,106.000,-0.000
+VIEW_M=-0.275637,-0.000000,-0.961262,1518.225586,-0.000000,1.000000,-0.000000,2751.373535,0.961262,0.000000,-0.275637,6443.259766,0.000000,0.000000,0.000000,1.000000
+VIEWPROJ off=0x40 size=7168 slot=1 layout=row draws=2375 freq=24
+VIEWPROJ_M=-1.543507,1.271843,-0.000000,8936.438477,-0.000000,0.000000,2.000000,-11.400391,1.271843,1.543508,0.000000,8528.467773,0.000000,0.000000,0.000000,1.000000
+# TOP VIEW buffers (draws=draw-calls/frame = main-scene weight):
+#   VIEW off=0x40 size=7168 slot=1 layout=col  draws=2375 maxfreq=18 distinct=5 hits=2310
+#   VIEW off=0xB40 size=16384 slot=-1 layout=col  draws=0 maxfreq=170 distinct=25 hits=618
+#   VIEW off=0x1A40 size=8192 slot=-1 layout=col  draws=0 maxfreq=118 distinct=19 hits=2099
+#   VIEW off=0x2040 size=16384 slot=-1 layout=col  draws=0 maxfreq=832 distinct=2 hits=11658
+#   VIEW off=0xB20 size=16384 slot=-1 layout=col  draws=0 maxfreq=140 distinct=10 hits=268
+# TOP VIEWPROJ buffers (draws=draw-calls/frame = main-scene weight):
+#   VIEWPROJ off=0x40 size=7168 slot=1 layout=row  draws=2375 maxfreq=24 distinct=20 hits=14500
+#   VIEWPROJ off=0x20 size=7168 slot=1 layout=row  draws=2375 maxfreq=12 distinct=10 hits=4816
+#   VIEWPROJ off=0x10 size=7168 slot=1 layout=row  draws=2375 maxfreq=12 distinct=9 hits=4373
+#   VIEWPROJ off=0x30 size=7168 slot=1 layout=row  draws=2375 maxfreq=12 distinct=9 hits=4373
+#   VIEWPROJ off=0xB50 size=16384 slot=-1 layout=row  draws=0 maxfreq=210 distinct=15 hits=428
+NOTE: the camera buffer is the one with the highest 'draws'. If its offset changes each frame the
+      buffer is transient (the mod re-finds it by size/layout/structure). Probe is read-only (no spin).
+################### END MOD BUILD SPEC ###################
+
+================== CAMERA REPORT (PROJ=0 VIEW=596 VP=889, draws-weighted) ==================
+################### MOD BUILD SPEC  (copy this whole block & send it) ###################
+GAME=P5R.exe
+ARCH=64-bit  API=D3D11  ENGINE=native/unknown  FILEVER=?
+RESOLUTION=3840x2160  SCREEN_ASPECT=1.7778
+INJECT_MODE=view  FORMULA=Vnew = R_head * V(3x3); translation -= lean
+CAMERA_DRAWS=2757  CAMERA_FREQ=18  (draws = #draw-calls/frame using this camera buffer)
+PROJ=none   # no screen-aspect projection isolated; FOV may live inside the VIEWPROJ (use Pinv route)
+VIEW off=0x40 size=7168 slot=1 layout=col hand=RH translation=col3 recovered=0 draws=2757 freq=18
+VIEW_CAMPOS=-5775.1787,-2751.3738,3235.4155  VIEW_EULER_PYR=-0.000,106.000,-0.000
+VIEW_M=-0.275637,-0.000000,-0.961262,1518.225586,-0.000000,1.000000,-0.000000,2751.373535,0.961262,0.000000,-0.275637,6443.259766,0.000000,0.000000,0.000000,1.000000
+VIEWPROJ off=0x40 size=7168 slot=1 layout=row draws=2757 freq=24
+VIEWPROJ_M=1.271843,1.543507,-0.000000,7326.762695,-0.000000,0.000000,2.000000,2088.599121,1.543507,-1.271843,0.000000,6339.589844,0.000000,0.000000,0.000000,1.000000
+# TOP VIEW buffers (draws=draw-calls/frame = main-scene weight):
+#   VIEW off=0x40 size=7168 slot=1 layout=col  draws=2757 maxfreq=18 distinct=2 hits=6410
+#   VIEW off=0x90 size=256 slot=-1 layout=col  draws=0 maxfreq=58 distinct=36 hits=1935
+#   VIEW off=0xC0 size=256 slot=-1 layout=col  draws=0 maxfreq=58 distinct=17 hits=895
+#   VIEW off=0x510 size=2048 slot=-1 layout=col  draws=0 maxfreq=8 distinct=67 hits=536
+#   VIEW off=0x480 size=2048 slot=-1 layout=col  draws=0 maxfreq=8 distinct=67 hits=536
+# TOP VIEWPROJ buffers (draws=draw-calls/frame = main-scene weight):
+#   VIEWPROJ off=0x40 size=7168 slot=1 layout=row  draws=2757 maxfreq=24 distinct=13 hits=52148
+#   VIEWPROJ off=0x20 size=7168 slot=1 layout=row  draws=2757 maxfreq=12 distinct=4 hits=12149
+#   VIEWPROJ off=0x30 size=7168 slot=1 layout=row  draws=2757 maxfreq=12 distinct=4 hits=11679
+#   VIEWPROJ off=0x10 size=7168 slot=1 layout=row  draws=2757 maxfreq=12 distinct=4 hits=11679
+#   VIEWPROJ off=0xA0 size=256 slot=-1 layout=row  draws=0 maxfreq=58 distinct=38 hits=2017
+NOTE: the camera buffer is the one with the highest 'draws'. If its offset changes each frame the
+      buffer is transient (the mod re-finds it by size/layout/structure). Probe is read-only (no spin).
+################### END MOD BUILD SPEC ###################
+
+================== CAMERA REPORT (PROJ=0 VIEW=42944 VP=51846, draws-weighted) ==================
+################### MOD BUILD SPEC  (copy this whole block & send it) ###################
+GAME=P5R.exe
+ARCH=64-bit  API=D3D11  ENGINE=native/unknown  FILEVER=?
+RESOLUTION=3840x2160  SCREEN_ASPECT=1.7778
+INJECT_MODE=view  FORMULA=Vnew = R_head * V(3x3); translation -= lean
+CAMERA_DRAWS=800  CAMERA_FREQ=8  (draws = #draw-calls/frame using this camera buffer)
+PROJ=none   # no screen-aspect projection isolated; FOV may live inside the VIEWPROJ (use Pinv route)
+VIEW off=0x40 size=7168 slot=1 layout=col hand=RH translation=col3 recovered=0 draws=800 freq=8
+VIEW_CAMPOS=33.9520,33.9521,-1.0000  VIEW_EULER_PYR=45.000,-90.000,-90.000
+VIEW_M=0.707107,-0.707107,0.000000,0.000000,0.000000,-0.000000,1.000000,1.000000,-0.707107,-0.707107,-0.000000,48.015450,0.000000,0.000000,0.000000,1.000000
+VIEWPROJ off=0x1890 size=16384 slot=-1 layout=row draws=0 freq=60
+VIEWPROJ_M=0.980275,0.229179,0.191777,-7.958562,-0.281409,0.493954,0.854496,136.265335,0.098862,-0.868439,0.534532,126.005669,0.952093,0.222590,0.186262,-12.968918
+# TOP VIEW buffers (draws=draw-calls/frame = main-scene weight):
+#   VIEW off=0x40 size=7168 slot=1 layout=col  draws=800 maxfreq=8 distinct=1 hits=1680
+#   VIEW off=0x0 size=7168 slot=1 layout=col  draws=764 maxfreq=40 distinct=13 hits=935
+#   VIEW off=0x240 size=16384 slot=1 layout=col  draws=665 maxfreq=36 distinct=75 hits=2000
+#   VIEW off=0x2010 size=16384 slot=-1 layout=col  draws=0 maxfreq=826 distinct=220 hits=95794
+#   VIEW off=0xB70 size=8192 slot=-1 layout=col  draws=0 maxfreq=1037 distinct=93 hits=41860
+# TOP VIEWPROJ buffers (draws=draw-calls/frame = main-scene weight):
+#   VIEWPROJ off=0x4F0 size=16384 slot=-1 layout=row  draws=0 maxfreq=40 distinct=215 hits=7000
+#   VIEWPROJ off=0x500 size=16384 slot=-1 layout=row  draws=0 maxfreq=40 distinct=214 hits=7048
+#   VIEWPROJ off=0x1880 size=16384 slot=-1 layout=row  draws=0 maxfreq=40 distinct=211 hits=6776
+#   VIEWPROJ off=0x5E0 size=16384 slot=-1 layout=row  draws=0 maxfreq=40 distinct=211 hits=6776
+#   VIEWPROJ off=0x5F0 size=16384 slot=-1 layout=row  draws=0 maxfreq=40 distinct=208 hits=6664
+NOTE: the camera buffer is the one with the highest 'draws'. If its offset changes each frame the
+      buffer is transient (the mod re-finds it by size/layout/structure). Probe is read-only (no spin).
+################### END MOD BUILD SPEC ###################
+
+================== CAMERA REPORT (PROJ=0 VIEW=39156 VP=46312, draws-weighted) ==================
+################### MOD BUILD SPEC  (copy this whole block & send it) ###################
+GAME=P5R.exe
+ARCH=64-bit  API=D3D11  ENGINE=native/unknown  FILEVER=?
+RESOLUTION=3840x2160  SCREEN_ASPECT=1.7778
+INJECT_MODE=view  FORMULA=Vnew = R_head * V(3x3); translation -= lean
+CAMERA_DRAWS=800  CAMERA_FREQ=10  (draws = #draw-calls/frame using this camera buffer)
+PROJ=none   # no screen-aspect projection isolated; FOV may live inside the VIEWPROJ (use Pinv route)
+VIEW off=0x40 size=7168 slot=1 layout=col hand=RH translation=col3 recovered=0 draws=800 freq=10
+VIEW_CAMPOS=-86.1471,-69.1646,-0.0000  VIEW_EULER_PYR=85.000,-90.000,-90.000
+VIEW_M=0.996195,-0.087156,0.000000,79.791161,0.000000,-0.000000,1.000000,0.000000,-0.087156,-0.996195,-0.000000,-76.409660,0.000000,0.000000,0.000000,1.000000
+VIEWPROJ off=0x1890 size=16384 slot=-1 layout=row draws=0 freq=60
+VIEWPROJ_M=0.572145,0.830025,-0.185594,-10.351414,-0.278972,0.395542,0.904841,139.372467,0.803466,-0.453555,0.446134,133.529724,0.555697,0.806163,-0.180259,-8.943427
+# TOP VIEW buffers (draws=draw-calls/frame = main-scene weight):
+#   VIEW off=0x40 size=7168 slot=1 layout=col  draws=800 maxfreq=10 distinct=4 hits=19910
+#   VIEW off=0x0 size=7168 slot=1 layout=col  draws=784 maxfreq=14 distinct=4 hits=420
+#   VIEW off=0x2A0 size=16384 slot=1 layout=col  draws=782 maxfreq=64 distinct=130 hits=8092
+#   VIEW off=0x240 size=16384 slot=1 layout=col  draws=779 maxfreq=32 distinct=95 hits=5030
+#   VIEW off=0xB70 size=8192 slot=-1 layout=col  draws=0 maxfreq=1003 distinct=128 hits=59653
+# TOP VIEWPROJ buffers (draws=draw-calls/frame = main-scene weight):
+#   VIEWPROJ off=0x5F0 size=16384 slot=-1 layout=row  draws=0 maxfreq=40 distinct=189 hits=7088
+#   VIEWPROJ off=0x1880 size=16384 slot=-1 layout=row  draws=0 maxfreq=40 distinct=189 hits=6592
+#   VIEWPROJ off=0x1890 size=16384 slot=-1 layout=row  draws=0 maxfreq=60 distinct=126 hits=7560
+#   VIEWPROJ off=0x1870 size=16384 slot=-1 layout=row  draws=0 maxfreq=40 distinct=188 hits=6688
+#   VIEWPROJ off=0x500 size=16384 slot=-1 layout=row  draws=0 maxfreq=40 distinct=187 hits=7392
+NOTE: the camera buffer is the one with the highest 'draws'. If its offset changes each frame the
+      buffer is transient (the mod re-finds it by size/layout/structure). Probe is read-only (no spin).
+################### END MOD BUILD SPEC ###################
+
+================== CAMERA REPORT (PROJ=1 VIEW=27287 VP=30249, draws-weighted) ==================
+################### MOD BUILD SPEC  (copy this whole block & send it) ###################
+GAME=P5R.exe
+ARCH=64-bit  API=D3D11  ENGINE=native/unknown  FILEVER=?
+RESOLUTION=3840x2160  SCREEN_ASPECT=1.7778
+INJECT_MODE=view  FORMULA=Vnew = R_head * V(3x3); translation -= lean
+CAMERA_DRAWS=780  CAMERA_FREQ=10  (draws = #draw-calls/frame using this camera buffer)
+PROJ off=0x0 size=7168 slot=2 layout=row fovV=32.000 fovH=54.022 aspect=1.7778 near=0.99998 far=-63736.641 reversedZ=1 draws=1609 freq=1
+PROJ_M=1.961671,0.000000,0.000000,0.000000,0.000000,3.487416,0.000000,0.000000,0.000000,0.000000,-1.000017,-1.000017,0.000000,0.000000,-1.000000,0.000000
+[FOV] current_vertical=32.00  current_horizontal=54.02   m0(=cot(H/2))=1.96167  m5(=cot(V/2))=3.48742
+[FOV] OVERRIDE to target vertical T deg: factor=tan(32.00/2)/tan(T/2); set m0*=factor, m5*=factor in the PROJ buffer each frame.
+[FOV] example T=90: factor=0.2867 -> m0=0.56250 m5=1.00000   (bigger T = wider view = smaller m0/m5)
+VIEW off=0x240 size=16384 slot=1 layout=col hand=RH translation=col3 recovered=0 draws=780 freq=10
+VIEW_CAMPOS=115.3802,-132.6592,-136.9235  VIEW_EULER_PYR=-29.053,91.995,80.826
+VIEW_M=-0.483753,0.859861,-0.142223,151.471863,-0.041751,0.138863,0.987568,159.221588,0.870858,0.484081,-0.030329,-40.708145,-0.483752,0.859861,-0.142223,151.488266
+VIEWPROJ off=0x10 size=7168 slot=1 layout=row draws=1609 freq=8
+VIEWPROJ_M=0.000000,0.000214,0.999786,270.484314,0.000000,-0.999786,0.000214,299.878815,0.000000,0.000000,0.000000,1.000000,1.000000,0.000000,0.000000,296.500031
+# TOP VIEW buffers (draws=draw-calls/frame = main-scene weight):
+#   VIEW off=0x240 size=16384 slot=1 layout=col  draws=780 maxfreq=32 distinct=70 hits=2638
+#   VIEW off=0x0 size=7168 slot=1 layout=col  draws=745 maxfreq=53 distinct=21 hits=880
+#   VIEW off=0x40 size=7168 slot=1 layout=col  draws=329 maxfreq=19 distinct=1 hits=43
+#   VIEW off=0x2010 size=16384 slot=-1 layout=col  draws=0 maxfreq=772 distinct=90 hits=19741
+#   VIEW off=0xB70 size=8192 slot=-1 layout=col  draws=0 maxfreq=1020 distinct=61 hits=24769
+# TOP VIEWPROJ buffers (draws=draw-calls/frame = main-scene weight):
+#   VIEWPROJ off=0x10 size=7168 slot=1 layout=row  draws=1609 maxfreq=14 distinct=3 hits=10328
+#   VIEWPROJ off=0x30 size=7168 slot=1 layout=row  draws=591 maxfreq=23 distinct=22 hits=461
+#   VIEWPROJ off=0x50 size=7168 slot=1 layout=row  draws=591 maxfreq=21 distinct=3 hits=75
+#   VIEWPROJ off=0x40 size=7168 slot=1 layout=row  draws=591 maxfreq=21 distinct=2 hits=32
+#   VIEWPROJ off=0x1880 size=16384 slot=-1 layout=row  draws=0 maxfreq=40 distinct=111 hits=3160
+NOTE: the camera buffer is the one with the highest 'draws'. If its offset changes each frame the
+      buffer is transient (the mod re-finds it by size/layout/structure). Probe is read-only (no spin).
+################### END MOD BUILD SPEC ###################
+
+================== CAMERA REPORT (PROJ=32 VIEW=34702 VP=44952, draws-weighted) ==================
+################### MOD BUILD SPEC  (copy this whole block & send it) ###################
+GAME=P5R.exe
+ARCH=64-bit  API=D3D11  ENGINE=native/unknown  FILEVER=?
+RESOLUTION=3840x2160  SCREEN_ASPECT=1.7778
+INJECT_MODE=view  FORMULA=Vnew = R_head * V(3x3); translation -= lean
+CAMERA_DRAWS=1883  CAMERA_FREQ=10  (draws = #draw-calls/frame using this camera buffer)
+PROJ off=0xFD0 size=8192 slot=-1 layout=col fovV=141.266 fovH=140.378 aspect=0.9758 near=65974.84375 far=66881.391 reversedZ=1 draws=0 freq=17
+PROJ_M=0.360243,0.392027,0.841731,-7.856941,-0.903419,0.351509,0.222591,-3834.005615,-0.592369,-0.799079,-0.013556,-894.322266,0.018837,-0.032888,0.993831,0.041275
+[FOV] current_vertical=141.27  current_horizontal=140.38   m0(=cot(H/2))=0.36024  m5(=cot(V/2))=0.35151
+[FOV] OVERRIDE to target vertical T deg: factor=tan(141.27/2)/tan(T/2); set m0*=factor, m5*=factor in the PROJ buffer each frame.
+[FOV] example T=90: factor=2.8449 -> m0=1.02485 m5=1.00000   (bigger T = wider view = smaller m0/m5)
+VIEW off=0x40 size=7168 slot=1 layout=col hand=RH translation=col3 recovered=0 draws=1883 freq=10
+VIEW_CAMPOS=86.8391,-4983.3853,-70.1105  VIEW_EULER_PYR=85.000,90.000,90.000
+VIEW_M=0.996194,0.087156,0.000000,347.823975,-0.000000,0.000000,1.000000,70.111359,0.087156,-0.996194,0.000000,-4971.991699,0.000000,0.000000,0.000000,1.000000
+VIEWPROJ off=0x40 size=7168 slot=1 layout=row draws=1883 freq=10
+VIEWPROJ_M=1.000000,0.000000,0.000000,-855.000000,0.000000,0.000214,0.999786,0.000305,0.000000,-0.999786,0.000214,-2840.000000,0.000000,0.000000,0.000000,1.000000
+# TOP VIEW buffers (draws=draw-calls/frame = main-scene weight):
+#   VIEW off=0x40 size=7168 slot=1 layout=col  draws=1883 maxfreq=17 distinct=9 hits=1627
+#   VIEW off=0x0 size=7168 slot=1 layout=col  draws=760 maxfreq=16 distinct=3 hits=93
+#   VIEW off=0x2010 size=16384 slot=-1 layout=col  draws=0 maxfreq=294 distinct=108 hits=14470
+#   VIEW off=0xFF0 size=16384 slot=-1 layout=col  draws=0 maxfreq=176 distinct=109 hits=5528
+#   VIEW off=0xF00 size=16384 slot=-1 layout=col  draws=0 maxfreq=128 distinct=112 hits=3880
+# TOP VIEWPROJ buffers (draws=draw-calls/frame = main-scene weight):
+#   VIEWPROJ off=0x30 size=7168 slot=1 layout=row  draws=1883 maxfreq=20 distinct=34 hits=1187
+#   VIEWPROJ off=0x40 size=7168 slot=1 layout=row  draws=1883 maxfreq=10 distinct=3 hits=2538
+#   VIEWPROJ off=0x20 size=7168 slot=1 layout=row  draws=1855 maxfreq=13 distinct=21 hits=191
+#   VIEWPROJ off=0x50 size=7168 slot=1 layout=row  draws=1647 maxfreq=17 distinct=7 hits=87
+#   VIEWPROJ off=0x1880 size=16384 slot=-1 layout=row  draws=0 maxfreq=40 distinct=143 hits=4424
+NOTE: the camera buffer is the one with the highest 'draws'. If its offset changes each frame the
+      buffer is transient (the mod re-finds it by size/layout/structure). Probe is read-only (no spin).
+################### END MOD BUILD SPEC ###################
+
+================== CAMERA REPORT (PROJ=9 VIEW=17199 VP=17620, draws-weighted) ==================
+################### MOD BUILD SPEC  (copy this whole block & send it) ###################
+GAME=P5R.exe
+ARCH=64-bit  API=D3D11  ENGINE=native/unknown  FILEVER=?
+RESOLUTION=3840x2160  SCREEN_ASPECT=1.7778
+INJECT_MODE=view  FORMULA=Vnew = R_head * V(3x3); translation -= lean
+CAMERA_DRAWS=1883  CAMERA_FREQ=10  (draws = #draw-calls/frame using this camera buffer)
+PROJ off=0xFD0 size=8192 slot=-1 layout=col fovV=141.677 fovH=139.354 aspect=0.9382 near=66691.66406 far=67598.055 reversedZ=1 draws=0 freq=14
+PROJ_M=0.370372,0.420807,0.823151,-7.427422,-0.904290,0.347480,0.228955,-3829.408936,-0.591876,-0.800632,-0.013410,-894.305969,0.018896,-0.032639,0.993510,0.031496
+[FOV] current_vertical=141.68  current_horizontal=139.35   m0(=cot(H/2))=0.37037  m5(=cot(V/2))=0.34748
+[FOV] OVERRIDE to target vertical T deg: factor=tan(141.68/2)/tan(T/2); set m0*=factor, m5*=factor in the PROJ buffer each frame.
+[FOV] example T=90: factor=2.8779 -> m0=1.06588 m5=1.00000   (bigger T = wider view = smaller m0/m5)
+VIEW off=0x40 size=7168 slot=1 layout=col hand=RH translation=col3 recovered=0 draws=1883 freq=10
+VIEW_CAMPOS=-32.8024,-3895.7786,2013.3540  VIEW_EULER_PYR=70.995,0.000,-90.108
+VIEW_M=-0.001886,-0.325584,-0.945285,635.000000,0.999998,-0.000614,-0.001783,34.000000,0.000000,-0.945287,0.325585,-4340.000000,0.000000,0.000000,0.000000,1.000000
+VIEWPROJ off=0x40 size=7168 slot=1 layout=row draws=1883 freq=10
+VIEWPROJ_M=1.000000,0.000000,0.000000,687.500000,0.000000,0.000214,0.999786,0.000092,0.000000,-0.999786,0.000214,-4430.000000,0.000000,0.000000,0.000000,1.000000
+# TOP VIEW buffers (draws=draw-calls/frame = main-scene weight):
+#   VIEW off=0x40 size=7168 slot=1 layout=col  draws=1883 maxfreq=10 distinct=2 hits=2503
+#   VIEW off=0x0 size=7168 slot=1 layout=col  draws=846 maxfreq=14 distinct=2 hits=174
+#   VIEW off=0xFF0 size=16384 slot=-1 layout=col  draws=0 maxfreq=176 distinct=92 hits=11492
+#   VIEW off=0x2010 size=16384 slot=-1 layout=col  draws=0 maxfreq=240 distinct=63 hits=5962
+#   VIEW off=0xEF0 size=16384 slot=-1 layout=col  draws=0 maxfreq=112 distinct=84 hits=3536
+# TOP VIEWPROJ buffers (draws=draw-calls/frame = main-scene weight):
+#   VIEWPROJ off=0x20 size=7168 slot=1 layout=row  draws=1883 maxfreq=8 distinct=10 hits=2041
+#   VIEWPROJ off=0x40 size=7168 slot=1 layout=row  draws=1883 maxfreq=10 distinct=2 hits=5098
+#   VIEWPROJ off=0x30 size=7168 slot=1 layout=row  draws=1689 maxfreq=18 distinct=68 hits=890
+#   VIEWPROJ off=0x50 size=7168 slot=1 layout=row  draws=876 maxfreq=8 distinct=1 hits=9
+#   VIEWPROJ off=0x5C0 size=16384 slot=-1 layout=row  draws=0 maxfreq=32 distinct=80 hits=2468
+NOTE: the camera buffer is the one with the highest 'draws'. If its offset changes each frame the
+      buffer is transient (the mod re-finds it by size/layout/structure). Probe is read-only (no spin).
+################### END MOD BUILD SPEC ###################
+
+================== CAMERA REPORT (PROJ=0 VIEW=20562 VP=28865, draws-weighted) ==================
+################### MOD BUILD SPEC  (copy this whole block & send it) ###################
+GAME=P5R.exe
+ARCH=64-bit  API=D3D11  ENGINE=native/unknown  FILEVER=?
+RESOLUTION=3840x2160  SCREEN_ASPECT=1.7778
+INJECT_MODE=view  FORMULA=Vnew = R_head * V(3x3); translation -= lean
+CAMERA_DRAWS=810  CAMERA_FREQ=54  (draws = #draw-calls/frame using this camera buffer)
+PROJ=none   # no screen-aspect projection isolated; FOV may live inside the VIEWPROJ (use Pinv route)
+VIEW off=0x0 size=7168 slot=1 layout=col hand=RH translation=col3 recovered=0 draws=810 freq=54
+VIEW_CAMPOS=139.9806,-441.5613,-208.7501  VIEW_EULER_PYR=-50.179,164.184,10.920
+VIEW_M=-0.979783,0.120831,-0.127775,165.910629,-0.022277,0.626315,0.774823,444.776154,0.173621,0.764006,-0.612906,187.098206,0.000000,0.000000,0.000000,1.000000
+VIEWPROJ off=0x30 size=7168 slot=1 layout=row draws=810 freq=18
+VIEWPROJ_M=0.000000,0.000000,0.000000,1.000000,0.389951,-0.666815,0.257304,-269.357819,0.702834,0.411015,-0.000000,316.889282,-0.129890,0.222112,0.772466,-395.190063
+# TOP VIEW buffers (draws=draw-calls/frame = main-scene weight):
+#   VIEW off=0x0 size=7168 slot=1 layout=col  draws=810 maxfreq=56 distinct=14 hits=2335
+#   VIEW off=0x10B0 size=16384 slot=-1 layout=col  draws=0 maxfreq=720 distinct=130 hits=42732
+#   VIEW off=0xB70 size=8192 slot=-1 layout=col  draws=0 maxfreq=1037 distinct=75 hits=48858
+#   VIEW off=0xB60 size=8192 slot=-1 layout=col  draws=0 maxfreq=1003 distinct=75 hits=45797
+#   VIEW off=0xB50 size=8192 slot=-1 layout=col  draws=0 maxfreq=1003 distinct=75 hits=45548
+# TOP VIEWPROJ buffers (draws=draw-calls/frame = main-scene weight):
+#   VIEWPROJ off=0x30 size=7168 slot=1 layout=row  draws=810 maxfreq=18 distinct=35 hits=547
+#   VIEWPROJ off=0x40 size=7168 slot=1 layout=row  draws=808 maxfreq=18 distinct=18 hits=351
+#   VIEWPROJ off=0x10 size=7168 slot=1 layout=row  draws=725 maxfreq=11 distinct=8 hits=14907
+#   VIEWPROJ off=0x20 size=7168 slot=1 layout=row  draws=725 maxfreq=8 distinct=7 hits=64
+#   VIEWPROJ off=0x0 size=7168 slot=1 layout=row  draws=725 maxfreq=8 distinct=4 hits=68
+NOTE: the camera buffer is the one with the highest 'draws'. If its offset changes each frame the
+      buffer is transient (the mod re-finds it by size/layout/structure). Probe is read-only (no spin).
+################### END MOD BUILD SPEC ###################
+
+================== CAMERA REPORT (PROJ=0 VIEW=43640 VP=68315, draws-weighted) ==================
+################### MOD BUILD SPEC  (copy this whole block & send it) ###################
+GAME=P5R.exe
+ARCH=64-bit  API=D3D11  ENGINE=native/unknown  FILEVER=?
+RESOLUTION=3840x2160  SCREEN_ASPECT=1.7778
+INJECT_MODE=view  FORMULA=Vnew = R_head * V(3x3); translation -= lean
+CAMERA_DRAWS=937  CAMERA_FREQ=24  (draws = #draw-calls/frame using this camera buffer)
+PROJ=none   # no screen-aspect projection isolated; FOV may live inside the VIEWPROJ (use Pinv route)
+VIEW off=0x240 size=16384 slot=1 layout=col hand=RH translation=col3 recovered=0 draws=937 freq=24
+VIEW_CAMPOS=135.1693,-336.2730,2.3643  VIEW_EULER_PYR=-62.723,-168.171,-10.764
+VIEW_M=-0.990557,-0.085068,0.038194,106.234642,-0.003442,0.447475,0.890172,150.353226,-0.093498,0.884512,-0.446404,314.274017,-0.990557,-0.085067,0.038194,106.235085
+VIEWPROJ off=0x0 size=7168 slot=1 layout=row draws=693 freq=8
+VIEWPROJ_M=-0.000038,-0.000078,0.000049,-316.290283,-0.000077,0.000056,0.000029,88.525093,-0.000050,-0.000027,-0.000081,251.495209,0.000000,0.000000,0.000000,1.000000
+# TOP VIEW buffers (draws=draw-calls/frame = main-scene weight):
+#   VIEW off=0x240 size=16384 slot=1 layout=col  draws=937 maxfreq=96 distinct=116 hits=3358
+#   VIEW off=0x0 size=7168 slot=1 layout=col  draws=823 maxfreq=82 distinct=20 hits=2708
+#   VIEW off=0x40 size=7168 slot=1 layout=col  draws=671 maxfreq=8 distinct=1 hits=30
+#   VIEW off=0x10B0 size=16384 slot=-1 layout=col  draws=0 maxfreq=720 distinct=214 hits=66590
+#   VIEW off=0xB70 size=8192 slot=-1 layout=col  draws=0 maxfreq=1037 distinct=112 hits=79838
+# TOP VIEWPROJ buffers (draws=draw-calls/frame = main-scene weight):
+#   VIEWPROJ off=0x10 size=7168 slot=1 layout=row  draws=693 maxfreq=10 distinct=14 hits=14487
+#   VIEWPROJ off=0x0 size=7168 slot=1 layout=row  draws=693 maxfreq=10 distinct=6 hits=120
+#   VIEWPROJ off=0x20 size=7168 slot=1 layout=row  draws=691 maxfreq=10 distinct=15 hits=150
+#   VIEWPROJ off=0x30 size=7168 slot=1 layout=row  draws=671 maxfreq=10 distinct=12 hits=140
+#   VIEWPROJ off=0x50 size=7168 slot=1 layout=row  draws=671 maxfreq=8 distinct=2 hits=60
+NOTE: the camera buffer is the one with the highest 'draws'. If its offset changes each frame the
+      buffer is transient (the mod re-finds it by size/layout/structure). Probe is read-only (no spin).
+################### END MOD BUILD SPEC ###################
+
+================== CAMERA REPORT (PROJ=13 VIEW=42978 VP=58129, draws-weighted) ==================
+################### MOD BUILD SPEC  (copy this whole block & send it) ###################
+GAME=P5R.exe
+ARCH=64-bit  API=D3D11  ENGINE=native/unknown  FILEVER=?
+RESOLUTION=3840x2160  SCREEN_ASPECT=1.7778
+INJECT_MODE=view  FORMULA=Vnew = R_head * V(3x3); translation -= lean
+CAMERA_DRAWS=571  CAMERA_FREQ=21  (draws = #draw-calls/frame using this camera buffer)
+PROJ off=0xFD0 size=8192 slot=-1 layout=col fovV=96.537 fovH=139.498 aspect=2.4176 near=69828.89062 far=71400.047 reversedZ=0 draws=0 freq=17
+PROJ_M=0.368935,0.417227,0.825672,-7.401123,-0.314360,0.891954,-0.311712,-4907.117188,-0.991127,0.077641,0.022006,1536.654297,0.018787,-0.032644,0.993841,0.014454
+[FOV] current_vertical=96.54  current_horizontal=139.50   m0(=cot(H/2))=0.36893  m5(=cot(V/2))=0.89195
+[FOV] OVERRIDE to target vertical T deg: factor=tan(96.54/2)/tan(T/2); set m0*=factor, m5*=factor in the PROJ buffer each frame.
+[FOV] example T=90: factor=1.1211 -> m0=0.41363 m5=1.00000   (bigger T = wider view = smaller m0/m5)
+VIEW off=0x0 size=7168 slot=1 layout=col hand=RH translation=col3 recovered=0 draws=571 freq=21
+VIEW_CAMPOS=1409.9012,4932.6147,-2240.7273  VIEW_EULER_PYR=-66.826,-173.054,-6.269
+VIEW_M=-0.994405,-0.042707,0.018282,1673.715088,0.000829,0.388784,0.917258,133.561981,-0.047369,0.915018,-0.388802,-5369.358887,0.000000,0.000000,0.000000,1.000000
+VIEWPROJ off=0x40 size=7168 slot=1 layout=row draws=1008 freq=10
+VIEWPROJ_M=1.000000,0.000001,0.000000,-1138.840088,0.000000,0.000000,1.000000,477.754517,0.000001,-1.000000,0.000000,499.999878,0.000000,0.000000,0.000000,1.000000
+# TOP VIEW buffers (draws=draw-calls/frame = main-scene weight):
+#   VIEW off=0x0 size=7168 slot=1 layout=col  draws=571 maxfreq=213 distinct=49 hits=6730
+#   VIEW off=0x2A0 size=16384 slot=1 layout=col  draws=303 maxfreq=409 distinct=172 hits=22728
+#   VIEW off=0x10B0 size=16384 slot=-1 layout=col  draws=0 maxfreq=1209 distinct=229 hits=79532
+#   VIEW off=0x1090 size=16384 slot=-1 layout=col  draws=0 maxfreq=1147 distinct=186 hits=73136
+#   VIEW off=0x10A0 size=16384 slot=-1 layout=col  draws=0 maxfreq=1147 distinct=186 hits=75472
+# TOP VIEWPROJ buffers (draws=draw-calls/frame = main-scene weight):
+#   VIEWPROJ off=0x40 size=7168 slot=1 layout=row  draws=1008 maxfreq=10 distinct=1 hits=8106
+#   VIEWPROJ off=0x20 size=7168 slot=1 layout=row  draws=720 maxfreq=12 distinct=27 hits=268
+#   VIEWPROJ off=0x10 size=7168 slot=1 layout=row  draws=516 maxfreq=12 distinct=25 hits=469
+#   VIEWPROJ off=0x0 size=7168 slot=1 layout=row  draws=516 maxfreq=12 distinct=24 hits=489
+#   VIEWPROJ off=0x30 size=7168 slot=1 layout=row  draws=513 maxfreq=12 distinct=23 hits=230
+NOTE: the camera buffer is the one with the highest 'draws'. If its offset changes each frame the
+      buffer is transient (the mod re-finds it by size/layout/structure). Probe is read-only (no spin).
+################### END MOD BUILD SPEC ###################
+
+================== CAMERA REPORT (PROJ=0 VIEW=17223 VP=18746, draws-weighted) ==================
+################### MOD BUILD SPEC  (copy this whole block & send it) ###################
+GAME=P5R.exe
+ARCH=64-bit  API=D3D11  ENGINE=native/unknown  FILEVER=?
+RESOLUTION=3840x2160  SCREEN_ASPECT=1.7778
+INJECT_MODE=view  FORMULA=Vnew = R_head * V(3x3); translation -= lean
+CAMERA_DRAWS=2162  CAMERA_FREQ=8  (draws = #draw-calls/frame using this camera buffer)
+PROJ=none   # no screen-aspect projection isolated; FOV may live inside the VIEWPROJ (use Pinv route)
+VIEW off=0x40 size=7168 slot=1 layout=col hand=RH translation=col3 recovered=0 draws=2162 freq=8
+VIEW_CAMPOS=128.6119,840.5326,-4758.7178  VIEW_EULER_PYR=1.930,180.000,-90.000
+VIEW_M=0.000000,-0.999432,0.033685,1000.355042,-1.000000,-0.000000,-0.000000,128.611801,0.000000,-0.033685,-0.999432,-4727.705078,0.000000,0.000000,0.000000,1.000000
+VIEWPROJ off=0x10 size=7168 slot=1 layout=row draws=2162 freq=12
+VIEWPROJ_M=0.000000,0.000214,0.999786,208.730331,0.000000,-0.999786,0.000214,242.402176,0.000000,0.000000,0.000000,1.000000,1.000000,0.000000,0.000000,646.181580
+# TOP VIEW buffers (draws=draw-calls/frame = main-scene weight):
+#   VIEW off=0x40 size=7168 slot=1 layout=col  draws=2162 maxfreq=8 distinct=1 hits=908
+#   VIEW off=0x0 size=7168 slot=1 layout=col  draws=975 maxfreq=20 distinct=2 hits=83
+#   VIEW off=0x2010 size=16384 slot=-1 layout=col  draws=0 maxfreq=288 distinct=55 hits=7131
+#   VIEW off=0xFF0 size=16384 slot=-1 layout=col  draws=0 maxfreq=176 distinct=65 hits=6956
+#   VIEW off=0xB70 size=8192 slot=-1 layout=col  draws=0 maxfreq=204 distinct=49 hits=9703
+# TOP VIEWPROJ buffers (draws=draw-calls/frame = main-scene weight):
+#   VIEWPROJ off=0x10 size=7168 slot=1 layout=row  draws=2162 maxfreq=18 distinct=4 hits=31473
+#   VIEWPROJ off=0x40 size=7168 slot=1 layout=row  draws=2162 maxfreq=17 distinct=4 hits=2287
+#   VIEWPROJ off=0x30 size=7168 slot=1 layout=row  draws=1972 maxfreq=17 distinct=16 hits=200
+#   VIEWPROJ off=0x20 size=7168 slot=1 layout=row  draws=1741 maxfreq=8 distinct=2 hits=24
+#   VIEWPROJ off=0x50 size=7168 slot=1 layout=row  draws=1735 maxfreq=14 distinct=1 hits=14
+NOTE: the camera buffer is the one with the highest 'draws'. If its offset changes each frame the
+      buffer is transient (the mod re-finds it by size/layout/structure). Probe is read-only (no spin).
+################### END MOD BUILD SPEC ###################
+
+================== CAMERA REPORT (PROJ=0 VIEW=8664 VP=6795, draws-weighted) ==================
+################### MOD BUILD SPEC  (copy this whole block & send it) ###################
+GAME=P5R.exe
+ARCH=64-bit  API=D3D11  ENGINE=native/unknown  FILEVER=?
+RESOLUTION=3840x2160  SCREEN_ASPECT=1.7778
+INJECT_MODE=view  FORMULA=Vnew = R_head * V(3x3); translation -= lean
+CAMERA_DRAWS=1971  CAMERA_FREQ=16  (draws = #draw-calls/frame using this camera buffer)
+PROJ=none   # no screen-aspect projection isolated; FOV may live inside the VIEWPROJ (use Pinv route)
+VIEW off=0x40 size=7168 slot=1 layout=col hand=RH translation=col3 recovered=0 draws=1971 freq=16
+VIEW_CAMPOS=-598.1962,282.8154,-4862.8213  VIEW_EULER_PYR=-11.716,177.209,135.498
+VIEW_M=0.704995,0.685879,0.176905,1088.774048,0.706712,-0.697908,-0.110556,83.105133,0.047676,0.203061,-0.977994,-4784.690430,0.000000,0.000000,0.000000,1.000000
+VIEWPROJ off=0x40 size=7168 slot=1 layout=row draws=2162 freq=10
+VIEWPROJ_M=-1.000000,0.000000,-0.000000,-1100.000000,0.000000,0.000214,0.999786,98.177849,0.000000,0.999786,-0.000214,-1501.007324,0.000000,0.000000,0.000000,1.000000
+# TOP VIEW buffers (draws=draw-calls/frame = main-scene weight):
+#   VIEW off=0x40 size=7168 slot=1 layout=col  draws=1971 maxfreq=16 distinct=2 hits=166
+#   VIEW off=0x2A0 size=4096 slot=-1 layout=col  draws=0 maxfreq=126 distinct=47 hits=5390
+#   VIEW off=0x140 size=4096 slot=-1 layout=col  draws=0 maxfreq=98 distinct=47 hits=3724
+#   VIEW off=0x130 size=4096 slot=-1 layout=col  draws=0 maxfreq=98 distinct=47 hits=3878
+#   VIEW off=0x1FB0 size=8192 slot=-1 layout=col  draws=0 maxfreq=90 distinct=44 hits=12037
+# TOP VIEWPROJ buffers (draws=draw-calls/frame = main-scene weight):
+#   VIEWPROJ off=0x40 size=7168 slot=1 layout=row  draws=2162 maxfreq=14 distinct=2 hits=1606
+#   VIEWPROJ off=0x20 size=7168 slot=1 layout=row  draws=1973 maxfreq=8 distinct=6 hits=156
+#   VIEWPROJ off=0x30 size=7168 slot=1 layout=row  draws=1971 maxfreq=14 distinct=4 hits=190
+#   VIEWPROJ off=0x50 size=7168 slot=1 layout=row  draws=1971 maxfreq=16 distinct=3 hits=194
+#   VIEWPROJ off=0xC20 size=4096 slot=-1 layout=row  draws=0 maxfreq=28 distinct=47 hits=1344
+NOTE: the camera buffer is the one with the highest 'draws'. If its offset changes each frame the
+      buffer is transient (the mod re-finds it by size/layout/structure). Probe is read-only (no spin).
+################### END MOD BUILD SPEC ###################
+
+================== CAMERA REPORT (PROJ=0 VIEW=8094 VP=7449, draws-weighted) ==================
+################### MOD BUILD SPEC  (copy this whole block & send it) ###################
+GAME=P5R.exe
+ARCH=64-bit  API=D3D11  ENGINE=native/unknown  FILEVER=?
+RESOLUTION=3840x2160  SCREEN_ASPECT=1.7778
+INJECT_MODE=view  FORMULA=Vnew = R_head * V(3x3); translation -= lean
+CAMERA_DRAWS=1043  CAMERA_FREQ=12  (draws = #draw-calls/frame using this camera buffer)
+PROJ=none   # no screen-aspect projection isolated; FOV may live inside the VIEWPROJ (use Pinv route)
+VIEW off=0x40 size=7168 slot=1 layout=col hand=RH translation=col3 recovered=0 draws=1043 freq=12
+VIEW_CAMPOS=-3824.5466,1414.6012,-1612.4036  VIEW_EULER_PYR=-4.846,-104.564,-66.955
+VIEW_M=-0.170431,-0.912257,0.358466,1218.460571,-0.197611,0.388074,0.894612,135.327881,-0.960339,0.084127,-0.249507,-4226.584473,0.000000,0.000000,0.000000,1.000000
+VIEWPROJ off=0x40 size=7168 slot=1 layout=row draws=2162 freq=10
+VIEWPROJ_M=-1.000000,0.000000,-0.000000,-1100.000000,0.000000,0.000214,0.999786,98.177849,0.000000,0.999786,-0.000214,-1501.007324,0.000000,0.000000,0.000000,1.000000
+# TOP VIEW buffers (draws=draw-calls/frame = main-scene weight):
+#   VIEW off=0x40 size=7168 slot=1 layout=col  draws=1043 maxfreq=12 distinct=1 hits=13
+#   VIEW off=0xFF0 size=16384 slot=-1 layout=col  draws=0 maxfreq=176 distinct=41 hits=5232
+#   VIEW off=0xB70 size=8192 slot=-1 layout=col  draws=0 maxfreq=204 distinct=33 hits=6630
+#   VIEW off=0x2010 size=16384 slot=-1 layout=col  draws=0 maxfreq=214 distinct=18 hits=3218
+#   VIEW off=0x2A0 size=4096 slot=-1 layout=col  draws=0 maxfreq=154 distinct=24 hits=6230
+# TOP VIEWPROJ buffers (draws=draw-calls/frame = main-scene weight):
+#   VIEWPROJ off=0x40 size=7168 slot=1 layout=row  draws=2162 maxfreq=14 distinct=3 hits=2318
+#   VIEWPROJ off=0x10 size=7168 slot=1 layout=row  draws=2162 maxfreq=10 distinct=4 hits=42606
+#   VIEWPROJ off=0x30 size=7168 slot=1 layout=row  draws=1931 maxfreq=17 distinct=10 hits=143
+#   VIEWPROJ off=0x20 size=7168 slot=1 layout=row  draws=1931 maxfreq=8 distinct=4 hits=32
+#   VIEWPROJ off=0x50 size=7168 slot=1 layout=row  draws=1816 maxfreq=14 distinct=3 hits=41
+NOTE: the camera buffer is the one with the highest 'draws'. If its offset changes each frame the
+      buffer is transient (the mod re-finds it by size/layout/structure). Probe is read-only (no spin).
+################### END MOD BUILD SPEC ###################
