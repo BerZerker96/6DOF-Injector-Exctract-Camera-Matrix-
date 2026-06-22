@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/banner.png" alt="6DOF Injector" width="100%">
+<img width="1584" height="672" alt="1782118745475" src="https://github.com/user-attachments/assets/ae68ec40-c427-4dc3-931d-f154e47c52b9" />
 </p>
 
 <p align="center">
