@@ -4,7 +4,7 @@
 //   D3D10 - hooks Buffer::Map/Unmap + UpdateSubresource
 //   D3D11 - hooks Map / Unmap / UpdateSubresource
 //   D3D12 - hooks ID3D12Resource::Map (scans the upload heaps)
-//   Vulkan- detected and reported (capture path is a separate add-on)
+//   Vulkan- detected; camera is driven CPU-side (the GPU hook is only a D3D convenience, not required)
 // A timer thread drives the report + END key + frequency window, so capture works without depending
 // on any one API's Present.
 #define WIN32_LEAN_AND_MEAN
@@ -28,15 +28,31 @@
 #include <psapi.h>
 
 // ----------------------------------------------------------------- logging
-static wchar_t g_logPath[MAX_PATH]={0}; static HMODULE g_self=nullptr; static std::mutex g_logMx;
+static wchar_t g_logPath[MAX_PATH]={0}; static wchar_t g_profPath[MAX_PATH]={0}; static HMODULE g_self=nullptr; static std::mutex g_logMx;
 static void resolveLogPath(){
     wchar_t dll[MAX_PATH]={0}; GetModuleFileNameW(g_self,dll,MAX_PATH);
-    wcscpy_s(g_logPath,MAX_PATH,dll); wchar_t* s=wcsrchr(g_logPath,L'\\'); if(s)*(s+1)=0; else g_logPath[0]=0;
+    wchar_t dir[MAX_PATH]={0}; wcscpy_s(dir,MAX_PATH,dll);
+    wchar_t* s=wcsrchr(dir,L'\\'); if(s)*(s+1)=0; else dir[0]=0;                         // dir = probe DLL folder
+    if(!dir[0]){ GetTempPathW(MAX_PATH,dir); }
+    // all output goes into a "6DOF Output" subfolder (created if missing)
+    wchar_t outdir[MAX_PATH]; wcscpy_s(outdir,MAX_PATH,dir); wcscat_s(outdir,MAX_PATH,L"6DOF Output\\");
+    CreateDirectoryW(outdir,nullptr);                                                   // ok if it already exists
+    DWORD att=GetFileAttributesW(outdir);
+    if(att==INVALID_FILE_ATTRIBUTES||!(att&FILE_ATTRIBUTE_DIRECTORY)){                  // e.g. Program Files w/o rights -> temp
+        wchar_t tmp[MAX_PATH]; GetTempPathW(MAX_PATH,tmp);
+        wcscpy_s(outdir,MAX_PATH,tmp); wcscat_s(outdir,MAX_PATH,L"6DOF Output\\"); CreateDirectoryW(outdir,nullptr); }
     wchar_t gexe[MAX_PATH]={0}; GetModuleFileNameW(nullptr,gexe,MAX_PATH);
-    wchar_t* gb=gexe; for(wchar_t*p=gexe;*p;++p) if(*p==L'\\'||*p==L'/') gb=p+1;
-    wchar_t* dot=wcsrchr(gb,L'.'); if(dot)*dot=0;
-    if(!g_logPath[0]){ GetTempPathW(MAX_PATH,g_logPath); }
+    wchar_t* gb=gexe; for(wchar_t*p=gexe;*p;++p) if(*p==L'\\'||*p==L'/') gb=p+1;        // gb = "Game.exe"
+    wcscpy_s(g_profPath,MAX_PATH,outdir);                                               // "<outdir>Game.exe.6dof.json"
+    wcscat_s(g_profPath,MAX_PATH,gb); wcscat_s(g_profPath,MAX_PATH,L".6dof.json");      // (runtime profile, named after the game)
+    wchar_t* dot=wcsrchr(gb,L'.'); if(dot)*dot=0;                                       // gb = "Game" (for the log name)
+    wcscpy_s(g_logPath,MAX_PATH,outdir);                                                // "<outdir>6DOF-Game.log"
     wcscat_s(g_logPath,MAX_PATH,L"6DOF-"); wcscat_s(g_logPath,MAX_PATH,gb); wcscat_s(g_logPath,MAX_PATH,L".log");
+}
+// overwrite a UTF-8 text file (used for the standalone JSON profile)
+static void writeTextFile(const wchar_t* path,const char* text){
+    HANDLE h=CreateFileW(path,GENERIC_WRITE,FILE_SHARE_READ,nullptr,CREATE_ALWAYS,FILE_ATTRIBUTE_NORMAL,nullptr);
+    if(h!=INVALID_HANDLE_VALUE){ DWORD w; WriteFile(h,text,(DWORD)strlen(text),&w,nullptr); CloseHandle(h); }
 }
 static void Log(const char* fmt,...){
     char buf[2048]; va_list ap; va_start(ap,fmt); int p=vsnprintf(buf,sizeof(buf)-2,fmt,ap); va_end(ap);
@@ -64,6 +80,8 @@ static bool ortho3x3(const float* m,float e=0.02f){
 }
 static bool identityish(const float* m){ float s=0; const float I[16]={1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1}; for(int i=0;i<16;i++)s+=fabsf(m[i]-I[i]); return s<0.01f; }
 static bool axisAligned(const float* m){ int n1=0,n0=0; for(int i=0;i<3;i++)for(int j=0;j<3;j++){float v=fabsf(m[i*4+j]); if(v>0.98f&&v<1.02f)n1++; else if(v<0.02f)n0++;} return n1==3&&n0==6; }
+static int g_projHand=0;      // +1 = left-handed, -1 = right-handed (0 = unknown)
+static bool g_projInfFar=false, g_projRevZ=false;
 static int classifyProj(const float* m,bool& rowMaj,float& fovY,float& fovX,float& aspect,float& zn,float& zf){
     rowMaj=true; fovY=fovX=aspect=zn=zf=0;
     bool rowP=fabsf(fabsf(m[11])-1.f)<0.05f&&fabsf(m[15])<0.05f&&m[0]>0.1f&&m[5]>0.1f&&fabsf(m[3])<0.05f&&fabsf(m[7])<0.05f;
@@ -72,7 +90,13 @@ static int classifyProj(const float* m,bool& rowMaj,float& fovY,float& fovX,floa
     float a=m[0],b=m[5]; fovX=2.f*atanf(1.f/a)*57.2957795f; fovY=2.f*atanf(1.f/b)*57.2957795f; aspect=b/a;
     if(fovX<20.f||fovX>170.f||fovY<20.f||fovY>170.f||aspect<0.4f||aspect>3.5f) return 0;  // implausible -> not a projection
     float c=m[10],d=rowMaj?m[14]:m[11]; if(fabsf(c)>1e-4f) zn=fabsf(d/c);
-    zf=(fabsf(c-1.f)<1e-3f)?0.f:zn/(1.f-fabsf(c)+1e-6f); return 1;
+    zf=(fabsf(c-1.f)<1e-3f)?0.f:zn/(1.f-fabsf(c)+1e-6f);
+    // handedness: the element copying view-space z into clip-space w is m[11] (row-major) / m[14] (col-major).
+    // Negative => right-handed view (-Z forward), positive => left-handed. (xdpixel / standard projection algebra.)
+    float zw = rowMaj?m[11]:m[14]; g_projHand = (zw<0)? -1 : +1;
+    g_projRevZ  = (m[10]<0.f);                 // reversed-Z: depth maps near->1, far->0 (m22 sign flips)
+    g_projInfFar= (zf>1e5f)||(zf<=0.f && zn>0.f); // far driven to infinity (no finite far term)
+    return 1;
 }
 static void eulerFromBasis(const float* m,float& pitch,float& yaw,float& roll){
     float r20=m[8],r21=m[9],r22=m[10],r01=m[1],r11=m[5];
@@ -156,6 +180,14 @@ static void report(){
     if(bP){ bool rz=bP->m[10]<0; Log("PROJ off=0x%X size=%u slot=%d layout=%s fovV=%.3f fovH=%.3f aspect=%.4f near=%.5f far=%.3f reversedZ=%d draws=%u freq=%u",
                 bP->off,bP->size,bP->slot,bP->rowMaj?"row":"col",bP->fovY,bP->fovX,bP->aspect,bP->zn,bP->zf,rz?1:0,bP->draws,bP->freq);
             mline(bP->m,buf,sizeof(buf)); Log("PROJ_M=%s",buf);
+            // handedness + depth convention straight from the chosen projection
+            float zw = bP->rowMaj?bP->m[11]:bP->m[14]; int hand=(zw<0)?-1:1; bool revz=bP->m[10]<0;
+            bool inffar=(bP->zf>1e5f)||(bP->zf<=0.f&&bP->zn>0.f);
+            Log("PROJ_CONVENTION handedness=%s (z->w=%.3f)  reversedZ=%d  infinite_far=%d",
+                hand<0?"right (-Z fwd)":"left (+Z fwd)", zw, revz?1:0, inffar?1:0);
+            Log("# Invert guidance: view matrices are right-handed even in LH engines, so the sign of \"look\"");
+            Log("# can't be inferred statically. If a head axis feels reversed in-game, set invert_yaw / invert_pitch /");
+            Log("# invert_roll (or invert_x/y/z for lean) = true in the .6dof.json, or toggle live with F10/F11.");
             // --- FOV: m0=cot(fovH/2), m5=cot(fovV/2). Override by scaling both. ---
             Log("[FOV] current_vertical=%.2f  current_horizontal=%.2f   m0(=cot(H/2))=%.5f  m5(=cot(V/2))=%.5f",bP->fovY,bP->fovX,bP->m[0],bP->m[5]);
             Log("[FOV] OVERRIDE to target vertical T deg: factor=tan(%.2f/2)/tan(T/2); set m0*=factor, m5*=factor in the PROJ buffer each frame.",bP->fovY);
@@ -337,6 +369,18 @@ static bool isEulerDeg(const float* e){
     float s=fabsf(e[0])+fabsf(e[1])+fabsf(e[2]); return s>1.5f && s<1000.f;
 }
 static bool looksLikePoint(const float* p){ for(int i=0;i<3;i++){ if(p[i]!=p[i]||fabsf(p[i])>1e6f) return false; } return (fabsf(p[0])+fabsf(p[1])+fabsf(p[2]))>0.5f; }
+// Identify which euler axis is pitch/yaw/roll from the observed values. Cross-game priors: pitch is clamped to
+// +/-90, yaw spans +/-180 (wraps), roll sits near 0. Default to the dominant X=pitch,Y=yaw,Z=roll convention, then
+// override from magnitudes: an axis whose |value|>90 must be yaw; the near-zero axis is roll. A single-snapshot
+// guess - mark it for the user to verify by moving the camera.
+static void eulerRoles(const float* e,char out[4]){
+    out[0]='P'; out[1]='Y'; out[2]='R'; out[3]=0;
+    int big=-1; float bigv=90.f; for(int i=0;i<3;i++){ if(fabsf(e[i])>bigv){bigv=fabsf(e[i]);big=i;} }
+    int zero=-1; float zv=2.f;    for(int i=0;i<3;i++){ if(fabsf(e[i])<zv){zv=fabsf(e[i]);zero=i;} }
+    if(big>=0){ for(int i=0;i<3;i++) out[i]=(i==big)?'Y':'?';
+        if(zero>=0&&zero!=big) out[zero]='R';
+        for(int i=0;i<3;i++) if(out[i]=='?') out[i]='P'; }
+}
 static float dist3(const float* a,const float* b){ float dx=a[0]-b[0],dy=a[1]-b[1],dz=a[2]-b[2]; return sqrtf(dx*dx+dy*dy+dz*dz); }
 // up vector = 2nd basis row (row-major cam-world) or 2nd column (col-major). Dominant world axis = up axis.
 static int upAxisOf(const float* m,bool rowMaj){
@@ -356,20 +400,22 @@ static float wupmGuess(){
 static const char* regName(int r){ static const char* n[16]={"rax","rcx","rdx","rbx","rsp","rbp","rsi","rdi","r8","r9","r10","r11","r12","r13","r14","r15"}; return (r>=0&&r<16)?n[r]:"?"; }
 static bool decodeStore(const uint8_t* s,int n,int& reg,int& disp,const char*& mnem,int& startIdx){
     bool got=false; int bestEnd=-1;
-    for(int i=0;i+3<n;i++){ int p=i,rexB=0;
-        if((s[p]&0xF0)==0x40){ rexB=s[p]&1; p++; }                              // optional REX
+    for(int i=0;i+3<n;i++){ int p=i; int pfx=0;
+        if(s[p]==0xF2||s[p]==0xF3||s[p]==0x66){ pfx=s[p]; p++; }                 // mandatory SSE prefix (comes BEFORE REX)
+        int rexB=0,rexR=0; if(p<n&&(s[p]&0xF0)==0x40){ rexB=s[p]&1; rexR=(s[p]>>2)&1; p++; } // optional REX
         const char* mn=nullptr; int opl=0;
-        if(p+1<n&&s[p]==0x0F&&s[p+1]==0x11) { mn="movups"; opl=2; }
-        else if(p+1<n&&s[p]==0x0F&&s[p+1]==0x29){ mn="movaps"; opl=2; }
-        else if(p+2<n&&s[p]==0xF3&&s[p+1]==0x0F&&s[p+2]==0x11){ mn="movss"; opl=3; }
-        else if(p+2<n&&s[p]==0x66&&s[p+1]==0x0F&&s[p+2]==0x7F){ mn="movdqa"; opl=3; }
+        if(p+1<n&&s[p]==0x0F&&s[p+1]==0x11){ opl=2;                              // 0F 11 /r = mov[u]ps/ss/sd/upd by prefix
+            mn = pfx==0xF3?"movss" : pfx==0xF2?"movsd" : pfx==0x66?"movupd" : "movups"; }
+        else if(p+1<n&&s[p]==0x0F&&s[p+1]==0x29&&pfx==0){ mn="movaps"; opl=2; }
+        else if(p+1<n&&s[p]==0x0F&&s[p+1]==0x7F&&pfx==0x66){ mn="movdqa"; opl=2; }
         else continue;
         int mp=p+opl; if(mp>=n) continue; uint8_t modrm=s[mp]; int mod=modrm>>6,rm=modrm&7;
         if(rm==4||mod==3) continue;                                            // SIB / reg-reg: skip
         int base=rm|(rexB<<3),dd=0,end=mp+1;
         if(mod==1&&mp+1<n){ dd=(int8_t)s[mp+1]; end=mp+2; }
         else if(mod==2&&mp+4<n){ dd=*(int32_t*)(s+mp+1); end=mp+5; }
-        else if(mod!=0) continue;
+        else if(mod!=0) continue;                                              // mod==0 RIP-rel (rm==5) handled as no-disp store; skip oddities
+        (void)rexR;
         if(end>bestEnd){ bestEnd=end; reg=base; disp=dd; mnem=mn; startIdx=i; got=true; }  // keep the one nearest rip
     }
     return got;
@@ -378,6 +424,7 @@ static bool decodeStore(const uint8_t* s,int n,int& reg,int& disp,const char*& m
 // ---- struct dump with field flagging + representation detection ------------------------------------
 // Records what KIND of camera this is and where each field sits, so the mod author gets a layout, not a guess.
 static int  g_reprMatOff=-1, g_reprQuatOff=-1, g_reprEulerOff=-1, g_reprFovOff=-1, g_reprEyeOff=-1, g_reprTgtOff=-1;
+static char g_reprEulerRoles[4]={0};
 static bool g_reprMatRow=true; static char g_reprKind[40]="unknown";
 static void dumpStructFlags(uintptr_t addr){
     g_reprMatOff=g_reprQuatOff=g_reprEulerOff=g_reprFovOff=g_reprEyeOff=g_reprTgtOff=-1; strcpy(g_reprKind,"unknown");
@@ -388,8 +435,9 @@ static void dumpStructFlags(uintptr_t addr){
             if(e.kind==2){ flag="VIEW/WORLD matrix (4x4)"; if(g_reprMatOff<0){g_reprMatOff=o;g_reprMatRow=e.rowMaj;} }
             else if(e.kind==1){ flag="PROJECTION matrix"; } }
         if(!*flag && Readable((void*)(addr+o),16) && isUnitQuat((float*)(addr+o))){ flag="unit QUATERNION"; if(g_reprQuatOff<0)g_reprQuatOff=o; }
-        if(!*flag && Readable((void*)(addr+o),12) && isEulerDeg((float*)(addr+o))){ flag="EULER degrees (r/p/y?)"; if(g_reprEulerOff<0)g_reprEulerOff=o; }
-        if(!*flag){ float f=*(float*)(addr+o); if(isFovFloat(f)){ flag="maybe FOV"; if(g_reprFovOff<0)g_reprFovOff=o; } }
+        if(!*flag && Readable((void*)(addr+o),12) && isEulerDeg((float*)(addr+o))){ char rl[4]; eulerRoles((float*)(addr+o),rl);
+            static char eb[48]; snprintf(eb,sizeof(eb),"EULER deg [%c,%c,%c] (pitch=+/-90,yaw=+/-180,roll~0; verify)",rl[0],rl[1],rl[2]); flag=eb; if(g_reprEulerOff<0){g_reprEulerOff=o; memcpy(g_reprEulerRoles,rl,4);} }
+        if(!*flag){ float f=*(float*)(addr+o); if(isFovFloat(f)){ flag=(f>0.5f&&f<1.6f)?"maybe FOV (angle, or a FACTOR of base FOV ~1.0=100%)":"maybe FOV"; if(g_reprFovOff<0)g_reprFovOff=o; } }
         if(*flag) Log("#   +0x%03X = %12.4f   <- %s",o,*(float*)(addr+o),flag);
     }
     // eye/target look-at rig: two world-points a sane distance apart (NieR/NinoKuni). Search vec3 pairs.
@@ -397,6 +445,12 @@ static void dumpStructFlags(uintptr_t addr){
         for(int b=a+12;b<a+0x40;b+=4){ if(!Readable((void*)(addr+b),12))continue; float* pb=(float*)(addr+b); if(!looksLikePoint(pb))continue;
             float d=dist3(pa,pb); if(d>0.3f&&d<5000.f){ g_reprEyeOff=a; g_reprTgtOff=b; Log("#   +0x%03X / +0x%03X  <- possible EYE / TARGET look-at pair (dist=%.1f)",a,b,d); break; } } }
     // decide the primary representation (matrix wins; then quat; then euler; then eye/target)
+    // a position vec3 commonly sits right beside the quaternion (typical pos+quat camera struct)
+    if(g_reprQuatOff>=0){ for(int d=-16;d<=16;d+=4){ int o=g_reprQuatOff+d; if(d==0||!Readable((void*)(addr+o),12)) continue;
+        if(looksLikePoint((float*)(addr+o))){ Log("#   +0x%03X  <- camera POSITION vec3 (beside the quaternion)",o); break; } } }
+    // FOV can sit far from the matrix/quat (some engines keep it hundreds of bytes away); sweep a wider window for a FOV scalar
+    if(g_reprFovOff<0){ for(int o=0x180;o<0x400;o+=4){ if(!Readable((void*)(addr+o),4))continue; float f=*(float*)(addr+o);
+        if(isFovFloat(f)){ g_reprFovOff=o; Log("#   +0x%03X = %12.4f   <- maybe FOV (far field)",o,f); break; } } }
     if(g_reprMatOff>=0)        snprintf(g_reprKind,sizeof(g_reprKind),"matrix4x4 @+0x%X (%s)",g_reprMatOff,g_reprMatRow?"row":"col");
     else if(g_reprQuatOff>=0)  snprintf(g_reprKind,sizeof(g_reprKind),"quaternion @+0x%X",g_reprQuatOff);
     else if(g_reprEulerOff>=0) snprintf(g_reprKind,sizeof(g_reprKind),"euler-deg @+0x%X",g_reprEulerOff);
@@ -404,6 +458,7 @@ static void dumpStructFlags(uintptr_t addr){
     Log("# REPRESENTATION = %s%s",g_reprKind, g_reprFovOff>=0?"  (+FOV float present)":"");
 }
 
+static void armWriteWatch(void* addr,int maxSlices,const char* prompt);  // fwd decl (defined with the write-watch)
 // ---- DIFFERENTIAL discovery: find the LIVE camera by what changes when you move (no GPU hook needed) ----
 struct Snap{ uintptr_t addr; uint8_t type; float v[16]; };   // type 1=matrix 2=quaternion
 static std::vector<Snap> g_snap; static std::mutex g_snapMx;
@@ -447,7 +502,9 @@ static void deltaScan(){
     if(bestAddr){ char mod[80]; uintptr_t off; moduleOf((void*)bestAddr,mod,sizeof(mod),off);
         Log("# STRONGEST mover = %s @ %s+0x%llX -> full layout + chains:",bestType==1?"matrix":"quaternion",mod,(unsigned long long)off);
         dumpStructFlags(bestAddr); findChains(bestAddr);
-        Log("# >>> This is a CPU-struct camera. Drive it directly (write head pose into the fields above).");
+        // This address JUST changed, so it is live RIGHT NOW - the best moment to catch its writer.
+        armWriteWatch((void*)bestAddr,6,"# write-watch armed on the moving camera (~3s) - KEEP MOVING the view continuously...");
+        Log("# >>> CPU-struct camera. Drive it directly, OR (if the address changes per frame) trampoline-hook the FN-HOOK function above.");
     }
     Log("# Re-press F8 after another rotation to confirm the SAME address keeps moving.");
     Log("======================================================================");
@@ -458,13 +515,35 @@ static bool bestViewEntry(Entry& out){
     std::vector<Entry> view;
     { std::lock_guard<std::mutex> lk(g_catMx); for(auto&kv:g_cat){ const Entry&e=kv.second; if(e.kind==2 && g_frame-e.lastFrame<240) view.push_back(e); } }
     if(view.empty()) return false;
-    std::sort(view.begin(),view.end(),[](const Entry&a,const Entry&b){ if(a.draws!=b.draws)return a.draws>b.draws; return a.freq>b.freq; });
+    std::sort(view.begin(),view.end(),[](const Entry&a,const Entry&b){
+        if(a.draws!=b.draws)return a.draws>b.draws;                 // primary: used by the most draws (shader-consumption proxy)
+        if(a.freq!=b.freq)  return a.freq>b.freq;                   // then: most frequently uploaded
+        if(a.slot!=b.slot)  return a.slot<b.slot;                   // tie-break: low CB slots are far more common for the view
+        bool aa=(a.off==0||(a.off%64)==0), ba=(b.off==0||(b.off%64)==0);
+        if(aa!=ba) return aa;                                       // tie-break: view sits at offset 0 or a 64-byte boundary
+        return a.off<b.off; });
     for(auto&e:view){ float p=fabsf(e.campos[0])+fabsf(e.campos[1])+fabsf(e.campos[2]); if(p>1.f){ out=e; return true; } }
     out=view[0]; return true;
 }
 
 // ---- GPU<->CPU correlation: locate the exact 64-byte matrix in writable memory (the CPU source) ----
 struct MemHit{ uintptr_t addr; char mod[80]; uintptr_t off; };
+// ---- 4x4 helpers for inverse/transpose correlation (some engines store inverse-view or a transposed copy) ----
+static void transpose4(const float* m,float* o){ for(int r=0;r<4;r++)for(int c=0;c<4;c++) o[c*4+r]=m[r*4+c]; }
+static bool gj4Inverse(const float* m,float* o){            // general 4x4 inverse via Gauss-Jordan (handles affine + inverse-view)
+    double a[4][8];
+    for(int r=0;r<4;r++){ for(int c=0;c<4;c++){ a[r][c]=m[r*4+c]; a[r][c+4]=(r==c)?1.0:0.0; } }
+    for(int col=0;col<4;col++){
+        int piv=col; double best=fabs(a[col][col]);
+        for(int r=col+1;r<4;r++){ if(fabs(a[r][col])>best){best=fabs(a[r][col]);piv=r;} }
+        if(best<1e-12) return false;
+        if(piv!=col) for(int c=0;c<8;c++){ double t=a[col][c]; a[col][c]=a[piv][c]; a[piv][c]=t; }
+        double d=a[col][col]; for(int c=0;c<8;c++) a[col][c]/=d;
+        for(int r=0;r<4;r++){ if(r==col) continue; double f=a[r][col]; for(int c=0;c<8;c++) a[r][c]-=f*a[col][c]; }
+    }
+    for(int r=0;r<4;r++)for(int c=0;c<4;c++) o[r*4+c]=(float)a[r][c+4];
+    return true;
+}
 static int findNeedle(const uint8_t* needle,std::vector<MemHit>& hits,int maxHits){
     SYSTEM_INFO si; GetSystemInfo(&si); uint32_t first=*(const uint32_t*)needle;
     uint8_t* p=(uint8_t*)si.lpMinimumApplicationAddress,*end=(uint8_t*)si.lpMaximumApplicationAddress; size_t budget=768u<<20;
@@ -509,7 +588,7 @@ static void findChains(uintptr_t target){
 }
 
 // ---- write-AOB: hardware-breakpoint the matrix to capture the instruction that writes it ----
-static uintptr_t g_writers[16]; static volatile int g_writerN=0; static PVOID g_veh=nullptr;
+static uintptr_t g_writers[16]; static int g_writerHits[16]; static volatile int g_writerN=0; static PVOID g_veh=nullptr;
 static LONG CALLBACK veh(EXCEPTION_POINTERS* ep){
     if(ep->ExceptionRecord->ExceptionCode==(DWORD)EXCEPTION_SINGLE_STEP){
 #ifdef _WIN64
@@ -517,7 +596,9 @@ static LONG CALLBACK veh(EXCEPTION_POINTERS* ep){
 #else
         uintptr_t rip=(uintptr_t)ep->ContextRecord->Eip;
 #endif
-        if(g_writerN<16){ bool dup=false; for(int i=0;i<g_writerN;i++) if(g_writers[i]==rip)dup=true; if(!dup) g_writers[g_writerN++]=rip; }
+        if(g_writerN<16){ int idx=-1; for(int i=0;i<g_writerN;i++) if(g_writers[i]==rip){idx=i;break;}
+            if(idx>=0) g_writerHits[idx]++; else { g_writers[g_writerN]=rip; g_writerHits[g_writerN]=1; g_writerN++; } }
+        else { for(int i=0;i<16;i++) if(g_writers[i]==rip){ g_writerHits[i]++; break; } }   // keep counting hits once full
         ep->ContextRecord->Dr6=0; return EXCEPTION_CONTINUE_EXECUTION;
     }
     return EXCEPTION_CONTINUE_SEARCH;
@@ -538,28 +619,279 @@ static void setBPAllThreads(void* addr,bool clear){
     CloseHandle(snap);
 }
 // decoded write-site, captured for the turnkey spec
-static int g_wReg=-1,g_wDisp=0,g_wSteal=0; static char g_wMnem[16]={0},g_wMod[80]={0}; static uintptr_t g_wOff=0;
+static int g_wReg=-1,g_wDisp=0,g_wSteal=0; static char g_wMnem[16]={0},g_wMod[80]={0},g_wMasked[160]={0},g_wStolenHex[80]={0}; static uintptr_t g_wOff=0;
+// ---- resolve a write-site RIP back to its FUNCTION ENTRY -> a trampoline-hook target ----
+// The CPU camera may be a transient buffer (e.g. a per-frame pool), so a fixed ADDRESS goes stale.
+// The CODE that writes it doesn't: hook the function (MinHook-style trampoline), let it run, then add
+// head pose to whatever camera it just wrote (base register captured below). This is the robust locator.
+static bool looksLikePrologue(const uint8_t* p){
+    if(p[0]==0x55) return true;                                  // push rbp
+    if(p[0]==0x53||p[0]==0x56||p[0]==0x57) return true;          // push rbx/rsi/rdi
+    if(p[0]==0x40 && (p[1]==0x53||p[1]==0x55||p[1]==0x56||p[1]==0x57)) return true; // REX push
+    if(p[0]==0x48 && p[1]==0x83 && p[2]==0xEC) return true;      // sub rsp,imm8
+    if(p[0]==0x48 && p[1]==0x81 && p[2]==0xEC) return true;      // sub rsp,imm32
+    if(p[0]==0x48 && p[1]==0x89 && (p[2]==0x5C||p[2]==0x6C||p[2]==0x74||p[2]==0x7C) && p[3]==0x24) return true; // mov [rsp+x],reg
+    if(p[0]==0x48 && p[1]==0x8B && p[2]==0xC4) return true;      // mov rax,rsp
+    if(p[0]==0x4C && p[1]==0x8B && p[2]==0xDC) return true;      // mov r11,rsp
+    if(p[0]==0x48 && p[1]==0x8B && p[2]==0xEC) return true;      // mov rbp,rsp (rare entry)
+    return false;
+}
+static uintptr_t findFunctionEntry(uintptr_t rip){
+    // walk backward; a function entry is preceded by INT3/NOP alignment padding or the previous func's RET,
+    // and itself begins with a recognizable prologue. Return the best candidate within 4KB.
+    const int MAXB=4096;
+    if(!Readable((void*)(rip-MAXB),MAXB+16)) { // shrink the window if the full range isn't mapped
+        for(int w=2048; w>=256; w>>=1){ if(Readable((void*)(rip-w),w+16)){ break; } }
+    }
+    for(int back=4; back<MAXB; back++){
+        uintptr_t cand=rip-back; if(!Readable((void*)(cand-1),20)) continue;
+        uint8_t prev=*(uint8_t*)(cand-1);
+        bool boundary=(prev==0xCC||prev==0xC3||prev==0x90); // int3 pad / ret / nop pad
+        if(boundary && looksLikePrologue((uint8_t*)cand)) return cand;
+    }
+    // fallback: nearest prologue-looking byte even without a clean boundary
+    for(int back=4; back<MAXB; back++){ uintptr_t cand=rip-back; if(Readable((void*)cand,8)&&looksLikePrologue((uint8_t*)cand)) return cand; }
+    return 0;
+}
+static char g_fnMod[80]={0}; static uintptr_t g_fnOff=0; static char g_fnAOB[160]={0};
+// Disassemble the camera-writer function for RIP-relative GLOBAL loads (mov/lea reg,[rip+disp32]).
+// The camera buffer can be transient, but the code reaches it through a STABLE module-global - so the
+// global (and the pointer it holds) is a static root you can build a pointer chain from. This is the
+// reliable locator for pooled/transient cameras (e.g. render-graph engines).
+static void scanFuncGlobals(uintptr_t fn){
+#ifndef _WIN64
+    Log("#   (RIP-relative global recovery is x64-only; on x86 the camera fn uses absolute [imm32] globals - read the AOB)"); return;
+#else
+    int reported=0;
+    for(int i=0;i<512 && reported<6;i++){
+        uintptr_t p=fn+i; if(!Readable((void*)p,8)) break;
+        uint8_t* c=(uint8_t*)p;
+        if(c[0]==0xC3||c[0]==0xCC) break;                                  // ret / padding -> end of function
+        bool rex=(c[0]==0x48||c[0]==0x49||c[0]==0x4C||c[0]==0x4D);
+        if(!rex) continue;
+        if(!(c[1]==0x8B||c[1]==0x8D)) continue;                            // mov r64,[..] or lea r64,[..]
+        if((c[2]&0xC7)!=0x05) continue;                                    // ModRM mod=00 rm=101 => RIP-relative disp32
+        int32_t disp=*(int32_t*)(c+3); uintptr_t next=p+7;                 // rip points at the next instruction
+        uintptr_t glob=next+(intptr_t)disp;
+        char gmod[80]; uintptr_t goff; moduleOf((void*)glob,gmod,sizeof(gmod),goff);
+        int reg=((c[2]>>3)&7)|((c[0]&0x4)?8:0);
+        const char* kind=(c[1]==0x8D)?"lea":"mov";
+        char extra[96]={0};
+        if(c[1]==0x8B && Readable((void*)glob,8)){ uintptr_t val=*(uintptr_t*)glob;   // mov loads a pointer/value
+            char vmod[80]; uintptr_t voff; if(val){ moduleOf((void*)val,vmod,sizeof(vmod),voff);
+                snprintf(extra,sizeof(extra)," -> *global=%s+0x%llX",vmod,(unsigned long long)voff); } }
+        Log("#   STATIC-ROOT cand: %s+0x%llX  (%s %s,[rip] in the camera fn)%s",gmod,(unsigned long long)goff,kind,regName(reg),extra);
+        reported++;
+    }
+    if(!reported) Log("#   (no RIP-relative globals found in the first 512 bytes - camera reached via args/registers only)");
+#endif
+}
+// ---- EXPORT: a ready-to-paste Cheat Engine auto-assembler (AOB injection) script, filled from the probe's own capture.
+// The CE template is generic/public; only the user's captured AOB/module/register/bytes fill it in. This bridges the
+// probe straight into the dominant freecam workflow (aobscanmodule -> code cave -> capture the camera struct pointer).
+static void emitCheatEngineTemplate(){
+    if(g_wReg<0||!g_wMod[0]||!g_wMasked[0]) return;
+    const char* aob=g_wMasked; while(*aob=='|'||*aob==' ') aob++;            // strip the '|' hook marker for CE's scanner
+    const char* reg=regName(g_wReg);
+    int pad=g_wSteal-5; if(pad<0) pad=0;                                     // jmp is 5 bytes; nop-pad the remainder of the stolen range
+    Log("");
+    Log("===== EXPORT: Cheat Engine AOB-injection script (paste into a CT 'Auto Assembler' entry) =====");
+    Log("[ENABLE]");
+    Log("aobscanmodule(camHook,%s,%s)",g_wMod,aob);
+    Log("alloc(newmem,$1000,camHook)");
+    Log("globalalloc(pCamera,8)            // <- camera struct pointer lands here; read X/Y/Z/rot/FOV at the offsets below");
+    Log("label(code) label(return)");
+    Log("newmem:");
+    Log("  mov [pCamera],%s               // capture the camera struct base the game just wrote to",reg);
+    Log("code:");
+    Log("  db %s                          // original stolen instruction(s) - executed unchanged",g_wStolenHex[0]?g_wStolenHex:"<stolen bytes>");
+    Log("  jmp return");
+    Log("camHook:");
+    Log("  jmp newmem");
+    for(int i=0;i<pad;i++) Log("  nop");
+    Log("return:");
+    Log("registersymbol(pCamera) registersymbol(camHook)");
+    Log("[DISABLE]");
+    Log("camHook:");
+    Log("  db %s                          // restore original bytes",g_wStolenHex[0]?g_wStolenHex:"<stolen bytes>");
+    Log("unregistersymbol(pCamera) unregistersymbol(camHook)");
+    Log("dealloc(newmem)");
+    Log("// then read the camera from [pCamera]:  field offset = 0x%X (the '??' bytes in the AOB).",g_wDisp<0?-g_wDisp:g_wDisp);
+    Log("=================================================================================");
+}
+// ---- EXPORT: compact field map of the camera struct (offsets the probe detected) ----
+static void emitFieldMap(){
+    bool any=(g_reprMatOff>=0||g_reprQuatOff>=0||g_reprEulerOff>=0||g_reprFovOff>=0||g_reprEyeOff>=0);
+    if(!any) return;
+    Log("===== EXPORT: camera struct field map (offsets from the struct base) =====");
+    if(g_reprMatOff>=0)   Log("  view_matrix : +0x%X   (4x4 float32, %s-major)",g_reprMatOff,g_reprMatRow?"row":"col");
+    if(g_reprQuatOff>=0)  Log("  quaternion  : +0x%X   (x,y,z,w float32)",g_reprQuatOff);
+    if(g_reprEulerOff>=0) Log("  euler_deg   : +0x%X   (pitch,yaw,roll degrees)",g_reprEulerOff);
+    if(g_reprEyeOff>=0)   Log("  eye/target  : +0x%X / +0x%X   (look-at vec3 pair)",g_reprEyeOff,g_reprTgtOff);
+    if(g_reprFovOff>=0)   Log("  fov         : +0x%X   (scalar; radians if <~3.2, degrees if >~25, OR a FACTOR of a base FOV if ~0.5-1.6 e.g. 1.0=100%%)",g_reprFovOff);
+    Log("==========================================================================");
+}
+// ---- EXPORT: the consolidated machine-readable 6DOF PROFILE - the bridge from probe to a generic runtime.
+// Everything a fixed mod engine needs to re-find and drive this camera, in one block. A profile marked
+// "verified" has passed the closed-loop view-response test. Save it as <exe>.6dof.json next to the runtime.
+static void emitProfile(const char* cpuMod,unsigned long long cpuOff,bool verified){
+    const char* aob=g_wMasked[0]?g_wMasked:""; while(*aob=='|'||*aob==' ') aob++;
+    std::string J; char ln[640];
+    // append-and-log: every line goes into both the big findings log and the standalone JSON buffer
+    #define JL(...) do{ snprintf(ln,sizeof(ln),__VA_ARGS__); Log("%s",ln); J+=ln; J+="\n"; }while(0)
+    Log("");
+    Log("===== EXPORT: 6DOF PROFILE (also written to %ls) =====",g_profPath);
+    JL("{");
+    JL("  \"schema\": 1, \"game_exe\": \"%s\", \"api\": \"%s\", \"engine\": \"%s\",",g_game,g_api,g_engine);
+    JL("  \"verified\": %s,",verified?"true":"false");
+    JL("  \"locator\": {");
+    JL("    \"module\": \"%s\", \"write_aob\": \"%s\",",g_wMod[0]?g_wMod:"?",aob);
+    JL("    \"capture_register\": \"%s\", \"field_offset\": %d, \"steal_bytes\": %d, \"stolen_hex\": \"%s\",",
+        g_wReg>=0?regName(g_wReg):"?",g_wDisp,g_wSteal,g_wStolenHex[0]?g_wStolenHex:"");
+    JL("    \"fn_module\": \"%s\", \"fn_offset\": \"0x%llX\", \"fn_entry_aob\": \"%s\",",g_fnMod[0]?g_fnMod:"",(unsigned long long)g_fnOff,g_fnAOB[0]?g_fnAOB:"");
+    JL("    \"cpu_module\": \"%s\", \"cpu_offset\": \"0x%llX\"",cpuMod?cpuMod:"",cpuOff);
+    JL("  },");
+    JL("  \"representation\": {");
+    JL("    \"kind\": \"%s\",",g_reprKind);
+    if(g_reprMatOff>=0)   JL("    \"matrix\": { \"offset\": %d, \"major\": \"%s\" },",g_reprMatOff,g_reprMatRow?"row":"col");
+    if(g_reprQuatOff>=0)  JL("    \"quaternion\": { \"offset\": %d, \"order\": \"xyzw\" },",g_reprQuatOff);
+    if(g_reprEulerOff>=0) JL("    \"euler_deg\": { \"offset\": %d, \"axis_roles\": \"%c%c%c\" },",g_reprEulerOff,
+        g_reprEulerRoles[0]?g_reprEulerRoles[0]:'?',g_reprEulerRoles[1]?g_reprEulerRoles[1]:'?',g_reprEulerRoles[2]?g_reprEulerRoles[2]:'?');
+    if(g_reprEyeOff>=0)   JL("    \"eye_target\": { \"eye_offset\": %d, \"target_offset\": %d },",g_reprEyeOff,g_reprTgtOff);
+    if(g_reprFovOff>=0)   JL("    \"fov\": { \"offset\": %d, \"encoding\": \"radians|degrees|factor (auto-detect at runtime)\" }",g_reprFovOff);
+    else                  JL("    \"fov\": null");
+    JL("  },");
+    JL("  \"apply\": { \"mode\": \"additive_eye_fixed\", \"position_scale_xy\": 1.0, \"position_scale_z\": 0.3,");
+    JL("    \"look_sensitivity\": 0.85, \"smoothing\": 0.0, \"roll_enable\": false, \"udp_port\": 4242,");
+    JL("    \"invert_yaw\": false, \"invert_pitch\": false, \"invert_roll\": false,");
+    JL("    \"invert_x\": false, \"invert_y\": false, \"invert_z\": false },");
+    JL("  \"projection_convention\": { \"handedness\": \"%s\", \"reversed_z\": %s, \"infinite_far\": %s }",
+        g_projHand<0?"right":(g_projHand>0?"left":"unknown"), g_projRevZ?"true":"false", g_projInfFar?"true":"false");
+    JL("}");
+    #undef JL
+    writeTextFile(g_profPath,J.c_str());                       // standalone .6dof.json for the runtime
+    if(!verified) Log("# NOTE: verified=false - confirm the camera responds (closed-loop or spin-test) before trusting this profile.");
+    Log("# FILES: full findings log = %ls ; runtime profile = %ls",g_logPath,g_profPath);
+    Log("=================================================================================");
+}
+static void emitFunctionHook(uintptr_t rip){
+    uintptr_t fn=findFunctionEntry(rip); if(!fn){ Log("# FN-HOOK: couldn't resolve a function entry above the write-site"); return; }
+    char mod[80]; uintptr_t off; moduleOf((void*)fn,mod,sizeof(mod),off);
+    if(!Readable((void*)fn,24)){ Log("# FN-HOOK: function entry @ %s+0x%llX (bytes unreadable)",mod,(unsigned long long)off); return; }
+    uint8_t* b=(uint8_t*)fn; char aob[160]; int n=0; for(int j=0;j<20 && n<(int)sizeof(aob)-4;j++) n+=snprintf(aob+n,sizeof(aob)-n,"%02X ",b[j]);
+    Log("# FN-HOOK: camera-writer FUNCTION @ %s+0x%llX  (trampoline-hook this; call original, then add head pose)",mod,(unsigned long long)off);
+    Log("# FN-ENTRY_AOB[entry..+20]: %s",aob);
+    Log("# FN-NOTE: at the write-site the camera base is in %s; from the hook, read it from that reg/arg, add pose to its matrix.",g_wReg>=0?regName(g_wReg):"the captured register");
+    Log("# static-root scan (turns a transient camera into a stable global+chain):");
+    scanFuncGlobals(fn);
+    strncpy(g_fnMod,mod,sizeof(g_fnMod)-1); g_fnOff=off; strncpy(g_fnAOB,aob,sizeof(g_fnAOB)-1);
+}
 static void emitWriteAOB(){
-    g_wReg=-1;
+    g_wReg=-1; g_fnOff=0;
     if(g_writerN==0){ Log("# write-AOB: no writer captured (camera wasn't written during the watch window, or BPs blocked)"); return; }
+    // MAJORITY VOTE: the per-frame camera update traps far more often than incidental writes; sort by hit count so
+    // the most-frequent writer is primary (writers[0]). This is more reliable than taking the first-trapped site.
+    for(int a=0;a<g_writerN;a++) for(int b=a+1;b<g_writerN;b++) if(g_writerHits[b]>g_writerHits[a]){
+        uintptr_t tw=g_writers[a]; g_writers[a]=g_writers[b]; g_writers[b]=tw; int th=g_writerHits[a]; g_writerHits[a]=g_writerHits[b]; g_writerHits[b]=th; }
+    if(g_writerN>1) Log("# write-watch caught %d distinct writers; using the most frequent (%d hits) as the camera update.",g_writerN,g_writerHits[0]);
     for(int i=0;i<g_writerN && i<3;i++){ uintptr_t rip=g_writers[i]; char mod[80]; uintptr_t off; moduleOf((void*)rip,mod,sizeof(mod),off);
         uint8_t* s=(uint8_t*)(rip-16);
         if(!Readable(s,32)){ Log("# WRITER @ %s+0x%llX (bytes unreadable)",mod,(unsigned long long)off); continue; }
         char hx[128]; int n=0; for(int j=0;j<24 && n<(int)sizeof(hx)-4;j++) n+=snprintf(hx+n,sizeof(hx)-n,"%02X ",s[j]);
-        Log("# WRITER @ %s+0x%llX  (data-BP traps after the store; the store ends at this rip)",mod,(unsigned long long)off);
+        Log("# WRITER @ %s+0x%llX  (%d hits; data-BP traps after the store)",mod,(unsigned long long)off,g_writerHits[i]);
         Log("# WRITE_AOB bytes[rip-16..+8]: %s",hx);
         int reg,disp,start; const char* mn;
         if(decodeStore(s,16,reg,disp,mn,start)){
             int steal=16-start;                                                 // bytes from the store start through rip
             Log("# WRITE_SITE decoded: %s [%s%+d]  -> camera base register = %s, field offset = 0x%X, steal>=%d bytes for a cave",
                 mn,regName(reg),disp,regName(reg),disp<0?-disp:disp,steal);
-            if(i==0){ g_wReg=reg; g_wDisp=disp; g_wSteal=steal; strncpy(g_wMnem,mn,sizeof(g_wMnem)-1); strncpy(g_wMod,mod,sizeof(g_wMod)-1); g_wOff=off-start; }
+            // build a paste-ready masked AOB (displacement wildcarded, scanner-paste style) from the store start through rip
+            int q=start; if(s[q]==0xF2||s[q]==0xF3||s[q]==0x66) q++; if((s[q]&0xF0)==0x40) q++; q+=2; // past prefix/REX/0F+opcode
+            int rmod=s[q]>>6; q++; int dlen=(rmod==1?1:rmod==2?4:0); int dstart=q;
+            char aob[160]; int an=0; an+=snprintf(aob+an,sizeof(aob)-an,"| ");   // '|' marks the capture/hook point (store start)
+            for(int k=start;k<16 && an<(int)sizeof(aob)-4;k++){
+                if(k>=dstart && k<dstart+dlen) an+=snprintf(aob+an,sizeof(aob)-an,"?? ");
+                else an+=snprintf(aob+an,sizeof(aob)-an,"%02X ",s[k]); }
+            Log("# WRITE_AOB_MASKED (paste into an AOB scanner; ?? = field offset, | = hook point): %s",aob);
+            if(i==0){ g_wReg=reg; g_wDisp=disp; g_wSteal=steal; strncpy(g_wMnem,mn,sizeof(g_wMnem)-1); strncpy(g_wMod,mod,sizeof(g_wMod)-1); g_wOff=off-start; strncpy(g_wMasked,aob,sizeof(g_wMasked)-1);
+                int hn=0; for(int k=start;k<16 && hn<(int)sizeof(g_wStolenHex)-4;k++) hn+=snprintf(g_wStolenHex+hn,sizeof(g_wStolenHex)-hn,"%02X ",s[k]); }
         } else Log("# WRITE_SITE: couldn't auto-decode the store form (SIB/atypical); use the AOB bytes above.");
+        if(i==0) emitFunctionHook(rip);   // resolve the containing function -> trampoline-hook recipe (robust vs transient buffers)
     }
+    emitFieldMap();              // EXPORT: struct field offsets the probe detected
+    emitCheatEngineTemplate();   // EXPORT: paste-ready Cheat Engine AOB-injection script from this capture
+}
+// arm the data breakpoint, wait (early-out when a writer is caught), disarm, then emit the write-site + function-hook.
+static void armWriteWatch(void* addr,int maxSlices,const char* prompt){
+    g_writerN=0; memset((void*)g_writerHits,0,sizeof(g_writerHits)); g_veh=AddVectoredExceptionHandler(1,veh); setBPAllThreads(addr,false);
+    Log("%s",prompt);
+    for(int t=0;t<maxSlices && g_writerN==0;t++) Sleep(500);
+    setBPAllThreads(addr,true); if(g_veh){ RemoveVectoredExceptionHandler(g_veh); g_veh=nullptr; }
+    emitWriteAOB();
+}
+// capture the FOV writer separately (FOV control is a universal camera-tool feature; it's a distinct movss store).
+// Doesn't touch the camera-write turnkey globals - just reports the FOV write-site so a mod can drive FOV too.
+static void captureFovWriter(uintptr_t fovAddr){
+    if(!fovAddr||!Readable((void*)fovAddr,4)) return;
+    g_writerN=0; memset((void*)g_writerHits,0,sizeof(g_writerHits)); g_veh=AddVectoredExceptionHandler(1,veh); setBPAllThreads((void*)fovAddr,false);
+    Log("# FOV write-watch armed (~3s) - zoom/aim to change FOV if you can, else just keep the view live...");
+    for(int t=0;t<6 && g_writerN==0;t++) Sleep(500);
+    setBPAllThreads((void*)fovAddr,true); if(g_veh){ RemoveVectoredExceptionHandler(g_veh); g_veh=nullptr; }
+    if(g_writerN==0){ Log("# FOV-WRITE: not captured (FOV constant during the watch)"); return; }
+    uintptr_t rip=g_writers[0]; char mod[80]; uintptr_t off; moduleOf((void*)rip,mod,sizeof(mod),off);
+    uint8_t* s=(uint8_t*)(rip-16); if(!Readable(s,32)){ Log("# FOV-WRITE @ %s+0x%llX (bytes unreadable)",mod,(unsigned long long)off); return; }
+    int reg,disp,start; const char* mn;
+    if(decodeStore(s,16,reg,disp,mn,start)){
+        int q=start; if(s[q]==0xF2||s[q]==0xF3||s[q]==0x66) q++; if((s[q]&0xF0)==0x40) q++; q+=2;
+        int rmod=s[q]>>6; q++; int dlen=(rmod==1?1:rmod==2?4:0); int dstart=q;
+        char aob[160]; int an=0; an+=snprintf(aob+an,sizeof(aob)-an,"| ");
+        for(int k=start;k<16 && an<(int)sizeof(aob)-4;k++){ if(k>=dstart&&k<dstart+dlen) an+=snprintf(aob+an,sizeof(aob)-an,"?? "); else an+=snprintf(aob+an,sizeof(aob)-an,"%02X ",s[k]); }
+        Log("# FOV-WRITE @ %s+0x%llX  store %s [%s%+d]  (hook this to control FOV; the scalar is the field at the offset)",mod,(unsigned long long)(off-start),mn,regName(reg),disp);
+        Log("# FOV-WRITE_AOB_MASKED: %s",aob);
+        uintptr_t fn=findFunctionEntry(rip); if(fn){ char fm[80]; uintptr_t fo; moduleOf((void*)fn,fm,sizeof(fm),fo);
+            Log("# FOV-FN-HOOK: %s+0x%llX  (trampoline this; after original, write your FOV into [%s%+d])",fm,(unsigned long long)fo,regName(reg),disp); }
+    } else Log("# FOV-WRITE @ %s+0x%llX (store form not auto-decoded; AOB bytes near rip apply)",mod,(unsigned long long)off);
 }
 
 // ---- spin-test: oscillate a confirmed matrix so the user can SEE if it drives the view ----
 static volatile bool g_spinning=false;
+static int g_lastVerified=0;   // 1 once a candidate's write is confirmed to move the rendered view
+// ---- CLOSED-LOOP VERIFICATION ----------------------------------------------------------------
+// The probe captures the GPU view matrix every frame. To PROVE a CPU candidate is the real camera
+// (not a downstream copy), perturb it and check whether the live rendered view actually responds.
+// This turns "best-ranked guess" into "I moved it and the view moved", and lets the pipeline fall
+// through to the next candidate automatically when a write has no effect.
+static bool readLiveView(float out[16],int& slot,uint32_t& off){
+    Entry bv; if(!bestViewEntry(bv)) return false; memcpy(out,bv.m,64); slot=bv.slot; off=bv.off; return true;
+}
+static float matDelta(const float* a,const float* b){ float s=0; for(int i=0;i<16;i++) s+=fabsf(a[i]-b[i]); return s; }
+// returns: 1 = verified (view responded), 0 = no response (downstream copy), -1 = inconclusive (no live view / not a matrix)
+static int verifyByView(void* addr){
+    if(!addr||!Readable(addr,64)) return -1;
+    float orig[16]; memcpy(orig,addr,64);
+    if(!ortho3x3(orig)||identityish(orig)) return -1;            // need a clean rotation matrix to perturb safely
+    float V0[16]; int s0; uint32_t o0; if(!readLiveView(V0,s0,o0)){ Log("# verify: no live GPU view to self-observe (Vulkan/pure-CPU path) - use the spin-test + your eyes instead."); return -1; }
+    Sleep(70); float Vn[16]; int sn; uint32_t on; if(!readLiveView(Vn,sn,on)) return -1;
+    float noise=matDelta(V0,Vn);                                  // baseline frame-to-frame jitter without any write
+    // perturb: rotate the candidate's 3x3 by a fixed yaw so the response is unambiguous
+    float a=0.5f,c=cosf(a),s=sinf(a); float Ry[9]={c,0,s,0,1,0,-s,0,c};
+    float R[9]={orig[0],orig[1],orig[2],orig[4],orig[5],orig[6],orig[8],orig[9],orig[10]},Rn[9];
+    for(int r=0;r<3;r++)for(int k=0;k<3;k++) Rn[r*3+k]=R[r*3]*Ry[k]+R[r*3+1]*Ry[3+k]+R[r*3+2]*Ry[6+k];
+    float pert[16]; memcpy(pert,orig,64);
+    pert[0]=Rn[0];pert[1]=Rn[1];pert[2]=Rn[2];pert[4]=Rn[3];pert[5]=Rn[4];pert[6]=Rn[5];pert[8]=Rn[6];pert[9]=Rn[7];pert[10]=Rn[8];
+    for(int rep=0;rep<6;rep++){ if(Readable(addr,64)) memcpy(addr,pert,64); Sleep(16); }   // hold a few frames so the engine uploads
+    float V1[16]; int s1; uint32_t o1; bool got=readLiveView(V1,s1,o1);
+    if(Readable(addr,64)) memcpy(addr,orig,64);                   // ALWAYS restore
+    if(!got) return -1;
+    if(s1!=s0||o1!=o0){ Log("# verify: the live view buffer changed identity mid-test - inconclusive."); return -1; }
+    float resp=matDelta(V0,V1);
+    bool ok = resp > (noise*5.f + 0.03f);
+    if(ok) g_lastVerified=1;
+    Log("# VERIFY @ %p : view-response delta=%.4f  baseline-noise=%.4f  => %s",addr,resp,noise,
+        ok?"CONFIRMED (writing this moved the rendered view - it IS the camera source)":"no response (downstream copy / wrong candidate)");
+    return ok?1:0;
+}
+
 static void spinTest(void* addr,int seconds){
     if(!addr||!Readable(addr,64)){ Log("# spin-test: target unreadable"); return; }
     float orig[16]; memcpy(orig,addr,64);
@@ -604,7 +936,12 @@ static void turnkeySpec(const Entry* bv,uintptr_t cpuAddr,const char* cpuMod,uin
     bool haveLoc=false;
     if(g_wReg>=0){ haveLoc=true;
         Log("    WRITE-SITE  : %s + 0x%llX   store %s [%s%+d]",g_wMod,(unsigned long long)g_wOff,g_wMnem,regName(g_wReg),g_wDisp);
-        Log("    => camera base register = %s ; field offset = 0x%X ; code-cave steal >= %d bytes (hook, let game write, then add head pose)",regName(g_wReg),g_wDisp<0?-g_wDisp:g_wDisp,g_wSteal); }
+        Log("    => camera base register = %s ; field offset = 0x%X ; code-cave steal >= %d bytes (hook, let game write, then add head pose)",regName(g_wReg),g_wDisp<0?-g_wDisp:g_wDisp,g_wSteal);
+        if(g_wMasked[0]) Log("    WRITE_AOB    : %s   (scan this; '|' = hook point, '??' = the field-offset bytes)",g_wMasked); }
+    if(g_fnOff){ haveLoc=true;
+        Log("    FN-HOOK     : %s + 0x%llX   <- trampoline-hook this FUNCTION (call original, then add head pose to the camera in %s).",g_fnMod,(unsigned long long)g_fnOff,g_wReg>=0?regName(g_wReg):"the write-site reg");
+        Log("    FN-ENTRY_AOB: %s",g_fnAOB);
+        Log("    *** PREFERRED for transient/pooled cameras (the matrix address changes per frame, the function does not). ***"); }
     if(bv && !cpuAddr){ haveLoc=true;
         Log("    GPU-CB      : VS slot=%d, buffer size=%u, matrix at byte offset 0x%X; inject at Map/Unmap; lock by (size,offset) signature, never by value.",bv->slot,bv->size,bv->off); }
     Log("    (static pointer chains, if any, are listed above as 'pointer chains -> target')");
@@ -617,14 +954,15 @@ static void turnkeySpec(const Entry* bv,uintptr_t cpuAddr,const char* cpuMod,uin
         Log("[3] LAYOUT: %s-major  handedness=%s(det=%.2f)  translation=%s  up-axis=%s",rowMaj?"row":"col",dt<0?"LH/mirror":"RH",dt,colT?"col3(idx3,7,11)":"row3(idx12,13,14)",up==1?"Y-up":(up==2?"Z-up":"X-up"));
         Log("    camPos=%.2f,%.2f,%.2f  euler(P,Y,R)=%.1f,%.1f,%.1f",M[12],M[13],M[14],pi,ya,ro);
         Log("    APPLY: read fresh each frame; compose head R into the 3x3 (world matrix=post-mult, view matrix=pre-mult); add lean along the basis to the translation slot.");
-    } else if(g_reprQuatOff>=0){ Log("[3] LAYOUT: quaternion(x,y,z,w) @+0x%X; q' = q * q_head then normalize; lean adds to the position vec3 beside it.",g_reprQuatOff);
-    } else if(g_reprEulerOff>=0){ Log("[3] LAYOUT: euler-degrees @+0x%X; ADD head yaw/pitch/roll directly (verify r/p/y order from the log); position is a separate field.",g_reprEulerOff);
+    } else if(g_reprQuatOff>=0){ Log("[3] LAYOUT: quaternion(x,y,z,w) @+0x%X; apply head rotation as q' = q (x) q_head (camera-local) then normalize; lean adds to the position vec3 beside it.",g_reprQuatOff);
+        Log("[3b] NODE-HIERARCHY NOTE: if this quaternion is a scene-graph node (common in AAA engines), the head delta must be applied in the node's frame - CONJUGATE: q_local = conj(q) (x) q_head_world (x) q, or try the other multiply order q' = q_head (x) q. Test both; the wrong frame makes the camera orbit/tilt oddly.");
+    } else if(g_reprEulerOff>=0){ Log("[3] LAYOUT: euler-degrees @+0x%X, axis roles ~ [%c,%c,%c] (pitch clamps +/-90, yaw wraps +/-180, roll sits ~0 - VERIFY by moving); ADD head yaw/pitch/roll to the matching axis; position is a separate field.",g_reprEulerOff,g_reprEulerRoles[0]?g_reprEulerRoles[0]:'?',g_reprEulerRoles[1]?g_reprEulerRoles[1]:'?',g_reprEulerRoles[2]?g_reprEulerRoles[2]:'?');
     } else if(g_reprEyeOff>=0){ Log("[3] LAYOUT: eye@+0x%X / target@+0x%X look-at; head yaw/pitch rotate target around eye; roll separate float; lean translates eye.",g_reprEyeOff,g_reprTgtOff); }
     // [4] FOV
     Entry pj; bool hp=pickBestProj(pj);
     if(hp){ bool rz=pj.m[10]<0; Log("[4] FOV: proj off=0x%X size=%u slot=%d  fovV=%.2f fovH=%.2f aspect=%.3f near=%.4f far=%.1f reversedZ=%d",pj.off,pj.size,pj.slot,pj.fovY,pj.fovX,pj.aspect,pj.zn,pj.zf,rz?1:0);
             Log("    override: scale m0 & m5 by tan(curV/2)/tan(targetV/2) in the PROJ buffer each frame."); }
-    else if(g_reprFovOff>=0) Log("[4] FOV: scalar @+0x%X in the camera struct (write new vertical FOV; radians if <3.2 else degrees).",g_reprFovOff);
+    else if(g_reprFovOff>=0) Log("[4] FOV: scalar @+0x%X (write a new vertical FOV: radians if <~3.2, degrees if >~25, OR a FACTOR of a base FOV if the value is ~1.0 - some engines store FOV as a multiplier/percentage of a fixed core angle, not an absolute angle).",g_reprFovOff);
     else Log("[4] FOV: not isolated (may be packed in the VIEWPROJ).");
     // [5] params
     Log("[5] RECOMMENDED INI: WorldUnitsPerMetre=%.0f (engine guess - tune)  Yaw/Pitch/Roll mult=1.0  Smoothing=0.5  inverts=0 (flip one at a time)",wupmGuess());
@@ -640,7 +978,7 @@ static void turnkeySpec(const Entry* bv,uintptr_t cpuAddr,const char* cpuMod,uin
 
 static volatile bool g_pipelineDone=false, g_pipelineRunning=false;
 static void runPipeline(){
-    if(g_pipelineRunning) return; g_pipelineRunning=true;
+    if(g_pipelineRunning) return; g_pipelineRunning=true; g_lastVerified=0;
     Log(""); Log("################### AUTO-PIPELINE ###################");
     Entry bv;
     if(!bestViewEntry(bv)){ Log("# no GPU VIEW candidate yet; scanning memory for a CPU camera instead..."); memScan();
@@ -649,25 +987,45 @@ static void runPipeline(){
     Log("# top GPU VIEW: off=0x%X size=%u slot=%d layout=%s draws=%u freq=%u campos=%.1f,%.1f,%.1f",
         bv.off,bv.size,bv.slot,bv.rowMaj?"row":"col",bv.draws,bv.freq,bv.campos[0],bv.campos[1],bv.campos[2]);
     std::vector<MemHit> hits; findNeedle((const uint8_t*)bv.m,hits,8);
+    bool invMatch=false,trMatch=false;
+    if(hits.empty()){
+        // ~1 in 6 engines store the INVERSE view (camera-to-world), or a transposed copy, on the GPU vs the CPU
+        // source - so an exact match misses. Search for the inverse and the transpose before giving up.
+        float inv[16],tr[16];
+        if(gj4Inverse(bv.m,inv)){ std::vector<MemHit> h2; findNeedle((const uint8_t*)inv,h2,4);
+            if(!h2.empty()){ invMatch=true; hits=h2; Log("# correlate: GPU buffer holds the INVERSE of the CPU matrix (engine stores camera-to-world; CPU source is world-to-view)"); } }
+        if(hits.empty()){ transpose4(bv.m,tr); std::vector<MemHit> h3; findNeedle((const uint8_t*)tr,h3,4);
+            if(!h3.empty()){ trMatch=true; hits=h3; Log("# correlate: GPU buffer is the TRANSPOSE of the CPU matrix (row/col-major differ between GPU and CPU)"); } }
+    }
     uintptr_t cpuAddr=0; char cpuMod[80]="heap"; uintptr_t cpuOff=0;
     if(hits.empty()) Log("# correlate: matrix not present in CPU memory right now (pure GPU-side, or it moved between capture & scan)");
-    else { Log("# correlate: %d CPU copy(ies) of the camera matrix:",(int)hits.size());
-        for(auto&h:hits){ Log("#   @ %s+0x%llX (%p)",h.mod,(unsigned long long)h.off,(void*)h.addr);
-            if(!cpuAddr || (strcmp(h.mod,"heap")!=0 && !strcmp(cpuMod,"heap"))){ cpuAddr=h.addr; strncpy(cpuMod,h.mod,sizeof(cpuMod)-1); cpuOff=h.off; } } }
+    else { Log("# correlate: %d CPU copy(ies) of the camera matrix%s:",(int)hits.size(),invMatch?" (as inverse)":(trMatch?" (as transpose)":""));
+        for(auto&h:hits) Log("#   @ %s+0x%llX (%p)",h.mod,(unsigned long long)h.off,(void*)h.addr);
+        // CLOSED-LOOP: there are often several identical copies; only the SOURCE moves the rendered view when written.
+        // Verify each (most-promising first) and lock onto the one that responds; this auto-rejects downstream copies.
+        Log("# verifying which copy actually drives the view (perturb + watch the live GPU view; auto-restored)...");
+        int verified=-1;
+        for(int i=0;i<(int)hits.size() && i<4;i++){ int r=verifyByView((void*)hits[i].addr);
+            if(r==1){ cpuAddr=hits[i].addr; strncpy(cpuMod,hits[i].mod,sizeof(cpuMod)-1); cpuOff=hits[i].off; verified=1; break; }
+            if(r==-1 && verified<0) verified=-1; }
+        if(!cpuAddr){   // none verified (or no live view to observe) - fall back to the first non-heap copy as before
+            for(auto&h:hits){ if(!cpuAddr || (strcmp(h.mod,"heap")!=0 && !strcmp(cpuMod,"heap"))){ cpuAddr=h.addr; strncpy(cpuMod,h.mod,sizeof(cpuMod)-1); cpuOff=h.off; } }
+            if(verified==0) Log("# verify: no copy moved the view - the source may be written elsewhere; proceeding with the best copy (treat as UNVERIFIED).");
+        }
+    }
     if(cpuAddr){
         findChains(cpuAddr);
         dumpStructFlags(cpuAddr);
-        g_writerN=0; g_veh=AddVectoredExceptionHandler(1,veh); setBPAllThreads((void*)cpuAddr,false);
-        Log("# write-watch armed on %p (~1.5s) - move the in-game camera now...",(void*)cpuAddr);
-        Sleep(1500); setBPAllThreads((void*)cpuAddr,true); if(g_veh){ RemoveVectoredExceptionHandler(g_veh); g_veh=nullptr; }
-        emitWriteAOB();
+        armWriteWatch((void*)cpuAddr,8,"# write-watch armed (~4s) - KEEP MOVING the in-game camera the WHOLE time (look around continuously)...");
+        if(g_reprFovOff>=0) captureFovWriter(cpuAddr+g_reprFovOff);   // FOV control is a universal feature - capture its writer too
         spinTest((void*)cpuAddr,3);
         Log("# >>> RECOMMENDED TARGET: %s+0x%llX  layout=%s  (drive THIS - the CPU source - not the GPU buffer)",cpuMod,(unsigned long long)cpuOff,bv.rowMaj?"row":"col");
     } else Log("# no CPU copy isolated - the GPU constant-buffer route is your handle (off=0x%X size=%u slot=%d).",bv.off,bv.size,bv.slot);
-    Log("# CONFIDENCE: ortho=yes draws=%u freq=%u cpu_copies=%d static_chain=%s writer_instrs=%d spin_test=%s",
-        bv.draws,bv.freq,(int)hits.size(),cpuAddr?"searched":"n/a",g_writerN,cpuAddr?"run":"skipped");
+    Log("# CONFIDENCE: ortho=yes draws=%u freq=%u cpu_copies=%d view_verified=%s writer_instrs=%d spin_test=%s",
+        bv.draws,bv.freq,(int)hits.size(),cpuAddr?(g_lastVerified?"YES":"no/na"):"n/a",g_writerN,cpuAddr?"run":"skipped");
     report();
     turnkeySpec(&bv,cpuAddr,cpuMod,cpuOff,cpuAddr!=0);
+    emitProfile(cpuMod,(unsigned long long)cpuOff,g_lastVerified!=0);   // consolidated machine-readable bridge -> runtime
     Log("################### AUTO-PIPELINE END ###################");
     g_pipelineDone=true; g_pipelineRunning=false;
 }
@@ -787,29 +1145,124 @@ static bool installGL(){
 }
 
 // ----------------------------------------------------------------- fingerprint + API detect
+static bool g_unity=false, g_il2cpp=false, g_mono=false, g_wrappedSwap=false, g_overlayTool=false;
 static void detectFingerprint(){
     char exe[MAX_PATH]={0}; GetModuleFileNameA(nullptr,exe,MAX_PATH);
     const char* b=exe; for(char* p=exe;*p;++p) if(*p=='\\'||*p=='/') b=p+1; strncpy(g_game,b,sizeof(g_game)-1);
-    struct{const wchar_t* dll;const char* e;} K[]={{L"UnityPlayer.dll","Unity"},{L"GameAssembly.dll","Unity(IL2CPP)"},{L"tier0.dll","Source"},{L"dunia.dll","Dunia"},{L"via.dll","RE Engine"}};
-    for(auto&k:K) if(GetModuleHandleW(k.dll)){ strncpy(g_engine,k.e,sizeof(g_engine)-1); break; }
-    if(strstr(exe,"-Win64-Shipping")) strncpy(g_engine,"Unreal Engine 4/5",sizeof(g_engine)-1);
+    // engine by loaded module (most reliable)
+    struct{const wchar_t* dll;const char* e;} K[]={
+        {L"UnityPlayer.dll","Unity"},{L"GameAssembly.dll","Unity (IL2CPP)"},
+        {L"via.dll","RE Engine"},{L"engine2.dll","Source 2"},{L"tier0.dll","Source"},
+        {L"dunia.dll","Dunia (Far Cry)"},{L"engine_x64_rwdi.dll","Chrome (Dying Light)"},
+        {L"CrySystem.dll","CryEngine"},{L"GameFramework.dll","CryEngine"},{L"d3d12core.dll",nullptr},
+        {L"oo2core_9_win64.dll",nullptr}};
+    for(auto&k:K) if(k.e && GetModuleHandleW(k.dll)){ strncpy(g_engine,k.e,sizeof(g_engine)-1); break; }
+    // managed runtime (Unity): IL2CPP vs Mono
+    if(GetModuleHandleW(L"UnityPlayer.dll")||GetModuleHandleW(L"GameAssembly.dll")){ g_unity=true;
+        if(GetModuleHandleW(L"GameAssembly.dll")) g_il2cpp=true;
+        if(GetModuleHandleW(L"mono-2.0-bdwgc.dll")||GetModuleHandleW(L"monobleedingedge.dll")) g_mono=true; }
+    // engine by exe name (fallbacks when no telltale module)
+    auto has=[&](const char* s){ return strstr(exe,s)!=nullptr; };
+    // upscaler / frame-generation wrappers insert a PROXY swapchain - a Present-vtable hook may grab the wrapper's
+    // swapchain (or crash on hotsample/resize). Detect them so we can warn and prefer the CPU pipeline if needed.
+    const wchar_t* W[]={L"sl.interposer.dll",L"sl.dlss_g.dll",L"nvngx_dlssg.dll",L"libxess.dll",L"libxess_dx11.dll",
+        L"amd_fidelityfx_dx12.dll",L"amd_fidelityfx_vk.dll",L"ffx_framegeneration.dll",L"dlssg_to_fsr3_amd_is_better.dll"};
+    for(auto w:W) if(GetModuleHandleW(w)){ g_wrappedSwap=true; break; }
+    // overlays/profilers (RivaTuner/Afterburner, etc.) can hold the hardware debug registers or hook Present,
+    // which can make the write-watch miss its writer or destabilize a present hook. Detect and warn.
+    const wchar_t* O[]={L"RTSSHooks64.dll",L"RTSSHooks.dll",L"RTSS.dll",L"fraps64.dll",L"overlay.dll"};
+    for(auto o:O) if(GetModuleHandleW(o)){ g_overlayTool=true; break; }
+    if(g_engine[0]=='n'){ // still "native/unknown"
+        if(has("-Win64-Shipping")||has("-WinGDK-Shipping")) strncpy(g_engine,"Unreal Engine 4/5",sizeof(g_engine)-1);
+        else if(has("Cyberpunk2077")) strncpy(g_engine,"REDengine 4",sizeof(g_engine)-1);
+        else if(has("witcher3")||has("witcher")) strncpy(g_engine,"REDengine 3",sizeof(g_engine)-1);
+        else if(has("GTA5")||has("RDR2")) strncpy(g_engine,"RAGE",sizeof(g_engine)-1);
+        else if(has("SkyrimSE")||has("Fallout4")||has("Starfield")) strncpy(g_engine,"Creation",sizeof(g_engine)-1);
+        else if(has("eldenring")||has("DarkSouls")||has("sekiro")) strncpy(g_engine,"FromSoft (Dantelion)",sizeof(g_engine)-1);
+    }
 }
 static volatile bool g_vk=false;
+// engine/API-tailored guidance: route each game to the method most likely to actually drive its camera.
+static void recommendApproach(){
+    Log("---- RECOMMENDED APPROACH (engine=%s api=%s) ----",g_engine,g_api);
+    if(g_unity){
+        Log("# UNITY: the reliable camera is MANAGED - drive Camera.worldToCameraMatrix (the view matrix) each");
+        Log("#   frame from a %s shim (BepInEx/Harmony), never the Transform - leaving the transform alone keeps",g_il2cpp?"IL2CPP (GameAssembly)":(g_mono?"Mono":"managed"));
+        Log("#   aim decoupled for free. Hook a render callback (RenderPipelineManager.beginCameraRendering for");
+        Log("#   SRP/Unity6, or Camera LateUpdate for built-in RP). GPU-side the view is unity_MatrixV in the");
+        Log("#   UnityPerCamera cbuffer, but most shaders use the baked unity_MatrixVP, so editing the GPU view");
+        Log("#   often won't move the scene - prefer the managed worldToCameraMatrix route.");
+    } else if(strstr(g_engine,"RE Engine")){
+        Log("# RE ENGINE: use the type database (find_type(\"via.Camera\"), get GameObject/Transform) to reach the");
+        Log("#   camera Transform and edit its world matrix from the camera-controller update hook; no AOB needed.");
+    } else if(strstr(g_engine,"Unreal")){
+        Log("# UNREAL: CPU side, the view comes from FMinimalViewInfo/APlayerCameraManager (pattern-scan the camera");
+        Log("#   manager update); GPU side a standalone view CB usually exists. Either the write-site cave or a");
+        Log("#   function hook on the camera-manager update works. FOV is a field on the camera manager.");
+    } else if(strstr(g_engine,"REDengine")||strstr(g_engine,"RAGE")){
+        Log("# QUATERNION/SINGLETON ENGINE: camera is quaternion+position reached via a global singleton. Recover");
+        Log("#   the singleton from the writer function's RIP-relative globals (STATIC-ROOT, below), then chain to it.");
+    } else if(strstr(g_engine,"Creation")){
+        Log("# CREATION: camera is a scene-graph node (NiNode world/local 3x3 + a worldToCam matrix). Hook the");
+        Log("#   camera update, write BOTH the node and the render camera; decouple aim by save/restore around the tick.");
+    }
+    if(g_vk){ Log("# VULKAN: this is NOT a limitation. Camera control is CPU-side and API-independent - shipped Vulkan camera");
+        Log("#   tools drive the camera by hijacking its CPU struct (AOB + code cave), and only use a graphics hook for an");
+        Log("#   on-screen overlay (often a SEPARATE D3D swapchain), which you don't need to build a head-tracking mod.");
+        Log("#   So the CPU pipeline here (F7->move->F8, then write-watch -> FN-HOOK + STATIC-ROOT) is the COMPLETE solution."); }
+    if(g_wrappedSwap){ Log("# UPSCALER/FRAME-GEN WRAPPER DETECTED (Streamline/DLSS-G/XeSS/FSR3): a proxy swapchain is in front of the");
+        Log("#   real one - a Present-vtable GPU hook may grab the wrapper (or crash on hotsample). Prefer the CPU pipeline");
+        Log("#   (F7/F8 + write-watch), or resolve the REAL swapchain behind the proxy before hooking Present."); }
+    if(g_overlayTool) Log("# OVERLAY/PROFILER DETECTED (RivaTuner/Afterburner/FRAPS): it can hold the hardware debug registers or hook"
+        " Present - if the write-watch catches nothing or things destabilize, close it and retry.");
+    Log("# GPU-CB TIMING: if you inject into the GPU view buffer, write at Present (before post/ReShade) and consistently");
+    Log("#   each frame - writing after post-processing or at a varying point causes flicker/misaligned frames.");
+    Log("# ANY API/engine fallback: F7->move->F8 (differential) isolates the live camera in CPU memory, then the");
+    Log("#   write-watch resolves the writer FUNCTION + a STATIC-ROOT global - works the same on D3D/GL/Vulkan.");
+    Log("# NOTE: the GPU constant-buffer hook is just a FAST FINDER for D3D games - camera control itself is always");
+    Log("#   CPU-side, so no game-renderer graphics hook is required to build the mod on any API.");
+}
 static const char* detectAndInstall(){
     if(GetModuleHandleW(L"d3d12.dll") && install12()){ strcpy(g_api,"D3D12"); install11(); return "D3D12 (+D3D11 fallback)"; }
     if(GetModuleHandleW(L"d3d11.dll") && install11()){ strcpy(g_api,"D3D11"); return "D3D11"; }
     if(GetModuleHandleW(L"d3d10.dll") && install10()){ strcpy(g_api,"D3D10"); return "D3D10"; }
     if(GetModuleHandleW(L"d3d9.dll")  && install9()){  strcpy(g_api,"D3D9");  return "D3D9"; }
     if(GetModuleHandleW(L"opengl32.dll") && installGL()){ strcpy(g_api,"OpenGL"); return "OpenGL"; }
-    if(GetModuleHandleW(L"vulkan-1.dll")){ strcpy(g_api,"Vulkan"); g_vk=true; return "Vulkan (detected - capture add-on pending)"; }
+    if(GetModuleHandleW(L"vulkan-1.dll")){ strcpy(g_api,"Vulkan"); g_vk=true; return "Vulkan (camera is CPU-side: F7/F8 + write-watch is the full route)"; }
     if(install11()){ strcpy(g_api,"D3D11?"); return "D3D11 (guess)"; }
     return nullptr;
 }
 
 // ----------------------------------------------------------------- timer thread (report + key + frame window)
 static volatile int g_reportEverySec=10;
+// GUI checkbox bridge: the loader drops "6DOF.cfg" next to the probe DLL; if it asks for auto deep scans,
+// we chain the normally-hotkey-driven passes (memory scan + F7/F8 differential + report) right after the
+// main pipeline detects & logs the camera - no keypresses needed.
+static volatile bool g_autoExtra=false;
+static void readConfig(){
+    wchar_t dll[MAX_PATH]={0}; GetModuleFileNameW(g_self,dll,MAX_PATH);
+    wchar_t* s=wcsrchr(dll,L'\\'); if(!s) return; *(s+1)=0;
+    wchar_t cfg[MAX_PATH]; wcscpy_s(cfg,MAX_PATH,dll); wcscat_s(cfg,MAX_PATH,L"6DOF.cfg");
+    FILE* f=_wfopen(cfg,L"rb"); if(!f) return;
+    char buf[256]={0}; size_t n=fread(buf,1,sizeof(buf)-1,f); fclose(f); buf[n<sizeof(buf)?n:sizeof(buf)-1]=0;
+    if(strstr(buf,"auto_extra_tests=1")) g_autoExtra=true;
+}
+static DWORD WINAPI autoExtraThread(LPVOID){
+    Log(""); Log("################### AUTO DEEP SCANS (enabled in the loader) ###################");
+    Log("# Main camera detection is done - now running the deep passes automatically.");
+    Sleep(600);
+    Log("# [1/4] memory scan (HOME) ...");                 memScan();
+    Log("# [2/4] differential baseline snapshot (F7) ..."); snapshotScan();
+    Log("# >>> MOVE / ROTATE the camera continuously for ~6s so the differential can isolate it <<<");
+    for(int i=6;i>0;i--){ Log("#       capturing motion delta in %d ...",i); Sleep(1000); }
+    Log("# [3/4] differential delta (F8) ...");            deltaScan();
+    Log("# [4/4] full report (END) ...");                  report();
+    Log("################### AUTO DEEP SCANS COMPLETE ###################");
+    return 0;
+}
+
 static DWORD WINAPI ticker(LPVOID){
-    uint64_t last=GetTickCount64(); bool pe=false,ph=false,pi2=false,pf7=false,pf8=false;
+    uint64_t last=GetTickCount64(); bool pe=false,ph=false,pi2=false,pf7=false,pf8=false; bool autoExtraStarted=false;
     while(true){
         Sleep(16);
         g_frame++;
@@ -817,6 +1270,8 @@ static DWORD WINAPI ticker(LPVOID){
         scanUploads12();
         // AUTOMATIC: once enough catalogue has built up (~5s), run the full discovery pipeline once.
         if(!g_pipelineDone && !g_pipelineRunning && g_frame==300){ CreateThread(nullptr,0,pipelineThread,nullptr,0,nullptr); }
+        // AUTOMATIC (opt-in via loader checkbox): after the main pipeline finishes, chain the deep passes once.
+        if(g_autoExtra && g_pipelineDone && !g_pipelineRunning && !autoExtraStarted){ autoExtraStarted=true; CreateThread(nullptr,0,autoExtraThread,nullptr,0,nullptr); }
         bool e=(GetAsyncKeyState(VK_END)&0x8000)!=0; if(e&&!pe){ g_spinUsed=true; report(); } pe=e;
         bool hk=(GetAsyncKeyState(VK_HOME)&0x8000)!=0; if(hk&&!ph){ memScan(); } ph=hk;
         bool ik=(GetAsyncKeyState(VK_INSERT)&0x8000)!=0; if(ik&&!pi2&&!g_pipelineRunning){ g_pipelineDone=false; CreateThread(nullptr,0,pipelineThread,nullptr,0,nullptr); } pi2=ik;
@@ -828,17 +1283,19 @@ static DWORD WINAPI ticker(LPVOID){
 
 static DWORD WINAPI worker(LPVOID){
     resolveLogPath();
+    readConfig();
     Log("================ 6DOF Probe injected (build %s %s) ================",__DATE__,__TIME__);
     detectFingerprint();
-    Log("game=%s  arch=%d-bit  engine=%s",g_game,(int)(sizeof(void*)*8),g_engine);
+    Log("game=%s  arch=%d-bit  engine=%s  auto_deep_scans=%s",g_game,(int)(sizeof(void*)*8),g_engine,g_autoExtra?"ON":"off");
     const char* picked=nullptr;
     for(int i=0;i<600 && !picked;i++){ picked=detectAndInstall(); if(!picked) Sleep(100); }
     if(picked){ Log("API=%s  hooks installed - capturing.",picked);
         Log("AUTO: full discovery pipeline (select->correlate GPU/CPU->pointer-chain->write-AOB->spin-test) runs ~5s after injection.");
         Log("KEYS: INSERT=re-run pipeline   END=report now   HOME=memory scan   F7=snapshot / F8=delta (find camera by motion).  Report also auto-writes every %ds.",g_reportEverySec);
-        if(g_vk) Log("NOTE: Vulkan present detected but matrix capture needs the vk add-on; CPU memory scan (HOME) still works.");
+        recommendApproach();
         CreateThread(nullptr,0,ticker,nullptr,0,nullptr); }
-    else Log("ERROR: no supported graphics API found to hook.");
+    else { Log("ERROR: no graphics API hooked - the API-independent CPU pipeline still works: press F7, move the view, F8.");
+        recommendApproach(); CreateThread(nullptr,0,ticker,nullptr,0,nullptr); }
     return 0;
 }
 
