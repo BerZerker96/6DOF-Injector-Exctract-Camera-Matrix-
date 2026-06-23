@@ -14,11 +14,15 @@
 #include <cstdlib>
 
 #ifdef PROBE32
-  #define PROBE_DLL L"6DOFProbe32.dll"
+  #define PROBE_DLL   L"6DOFProbe32.dll"
+  #define RUNTIME_DLL L"6DOFRuntime32.dll"
   #define ARCHNAME  "32-bit"
+  #define SELF64 false
 #else
-  #define PROBE_DLL L"6DOFProbe.dll"
+  #define PROBE_DLL   L"6DOFProbe.dll"
+  #define RUNTIME_DLL L"6DOFRuntime.dll"
   #define ARCHNAME  "64-bit"
+  #define SELF64 true
 #endif
 
 static DWORD findPid(const wchar_t* name){
@@ -49,25 +53,40 @@ static bool inject(DWORD pid, const wchar_t* dllPath){
 
 int wmain(int argc, wchar_t** argv){
     wprintf(L"6DOF Injector (%hs)\n", ARCHNAME);
-    if (argc<2){ wprintf(L"Usage: %ls <process.exe | PID>\n", argv[0]); return 1; }
+    if (argc<2){ wprintf(L"Usage: %ls <process.exe | PID> [--runtime]\n  (default injects the probe to FIND the camera; --runtime injects the apply-side head-tracking DLL)\n", argv[0]); return 1; }
 
-    // resolve full path to the probe dll next to this exe
+    // pick which DLL: probe (find camera) or runtime (apply head pose). The arch is auto-matched to this build,
+    // which must match the target - verified below.
+    bool wantRuntime=false; const wchar_t* target=nullptr;
+    for(int i=1;i<argc;i++){ if(_wcsicmp(argv[i],L"--runtime")==0||_wcsicmp(argv[i],L"-r")==0) wantRuntime=true; else if(!target) target=argv[i]; }
+    if(!target){ wprintf(L"ERROR: no target process given.\n"); return 1; }
+    const wchar_t* DLL_NAME = wantRuntime?RUNTIME_DLL:PROBE_DLL;
+
+    // resolve full path to the chosen dll next to this exe
     wchar_t selfDir[MAX_PATH]={0}; GetModuleFileNameW(nullptr,selfDir,MAX_PATH);
     if (wchar_t* s=wcsrchr(selfDir,L'\\')) *(s+1)=0;
-    wchar_t dll[MAX_PATH]; wcscpy_s(dll,MAX_PATH,selfDir); wcscat_s(dll,MAX_PATH,PROBE_DLL);
-    if (GetFileAttributesW(dll)==INVALID_FILE_ATTRIBUTES){ wprintf(L"ERROR: %ls not found next to the injector.\n",PROBE_DLL); return 1; }
+    wchar_t dll[MAX_PATH]; wcscpy_s(dll,MAX_PATH,selfDir); wcscat_s(dll,MAX_PATH,DLL_NAME);
+    if (GetFileAttributesW(dll)==INVALID_FILE_ATTRIBUTES){ wprintf(L"ERROR: %ls not found next to the injector.\n",DLL_NAME); return 1; }
 
     // target: numeric PID or process name
-    DWORD pid=0; wchar_t* end=nullptr; unsigned long asNum=wcstoul(argv[1],&end,10);
+    DWORD pid=0; wchar_t* end=nullptr; unsigned long asNum=wcstoul(target,&end,10);
     bool numeric=(end&&*end==0&&asNum>0);
     if (numeric){ pid=(DWORD)asNum; }
     else {
-        wprintf(L"Waiting for '%ls' (up to 90s; launch the game now if needed)...\n",argv[1]);
-        for (int i=0;i<180 && pid==0;i++){ pid=findPid(argv[1]); if(!pid) Sleep(500); }
-        if (!pid){ wprintf(L"ERROR: process '%ls' not found.\n",argv[1]); return 1; }
+        wprintf(L"Waiting for '%ls' (up to 90s; launch the game now if needed)...\n",target);
+        for (int i=0;i<180 && pid==0;i++){ pid=findPid(target); if(!pid) Sleep(500); }
+        if (!pid){ wprintf(L"ERROR: process '%ls' not found.\n",target); return 1; }
     }
-    wprintf(L"Injecting %ls into PID %lu ...\n",PROBE_DLL,pid);
+    // verify the target's architecture matches this injector (cross-arch injection can't work)
+    { HANDLE q=OpenProcess(PROCESS_QUERY_INFORMATION|PROCESS_QUERY_LIMITED_INFORMATION,FALSE,pid);
+      if(q){ BOOL wow=FALSE; IsWow64Process(q,&wow); CloseHandle(q); bool target32=wow;     // wow64 => 32-bit game on 64-bit OS
+        if(SELF64 && target32){ wprintf(L"ERROR: that game is 32-bit - use the 32-bit injector (6DOFInject32.exe).\n"); return 1; }
+        if(!SELF64 && !target32){ wprintf(L"ERROR: that game is 64-bit - use the 64-bit injector (6DOFInject.exe).\n"); return 1; } } }
+    wprintf(L"Injecting %ls into PID %lu ...\n",DLL_NAME,pid);
     Sleep(1500);   // small grace so the game's D3D device is up
-    if (inject(pid,dll)){ wprintf(L"OK - injected. Look for 6DOF-Probe.log next to the game exe.\n  In-game: press END for a report now (it also auto-writes every ~10s).\n"); return 0; }
+    if (inject(pid,dll)){
+        if(wantRuntime) wprintf(L"OK - runtime injected. It loads <game>.6dof.json, runs a cave self-test, and applies OpenTrack head pose.\n  In-game: F8 toggle, F9 recenter, F10/F11 invert yaw/pitch.\n");
+        else            wprintf(L"OK - probe injected. Look for 6DOF-Probe.log next to the game exe.\n  In-game: press END for a report now (it also auto-writes every ~10s).\n");
+        return 0; }
     wprintf(L"Injection failed.\n"); return 1;
 }

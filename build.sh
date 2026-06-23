@@ -10,10 +10,12 @@ x86_64-w64-mingw32-g++ src/probe.cpp $DLL -o 6DOFProbe.dll
 i686-w64-mingw32-g++   src/probe.cpp $DLL -o 6DOFProbe32.dll
 # universal runtime (x64)
 x86_64-w64-mingw32-g++ runtime/sixdof_runtime.cpp -O2 -std=c++17 -shared -static -static-libgcc -static-libstdc++ -lws2_32 -lpsapi -o 6DOFRuntime.dll
-# modern dark-theme GUI loaders (icon embedded)
+# universal runtime (x86) - 32-bit games load the 32-bit DLL. Default capture is a cave-less hardware breakpoint (arch-uniform); the inline-cave fallback is arch-specific (see installCapture).
+i686-w64-mingw32-g++ runtime/sixdof_runtime.cpp -O2 -std=c++17 -shared -static -static-libgcc -static-libstdc++ -lws2_32 -lpsapi -o 6DOFRuntime32.dll
+# ONE unified dark-theme GUI (64-bit; runs on all 64-bit Windows). It injects 64-bit games directly and delegates
+# 32-bit games to the bundled 6DOFInject32.exe CLI, so a single GUI binary covers both architectures.
 GUI="-O2 -std=c++17 -static -static-libgcc -static-libstdc++ -municode -mwindows -ldwmapi -lgdi32 -luser32"
 x86_64-w64-mingw32-g++ src/injectgui.cpp r64.o $GUI -o 6DOFInjectGUI.exe
-i686-w64-mingw32-g++   src/injectgui.cpp r32.o $GUI -DPROBE32 -o 6DOFInjectGUI32.exe
 # CLI loaders (icon embedded)
 x86_64-w64-mingw32-g++ src/inject.cpp rc64.o -O2 -std=c++17 -static -municode -o 6DOFInject.exe
 i686-w64-mingw32-g++   src/inject.cpp rc32.o -O2 -std=c++17 -static -municode -DPROBE32 -o 6DOFInject32.exe

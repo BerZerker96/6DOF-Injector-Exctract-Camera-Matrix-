@@ -13,18 +13,20 @@
 
 #ifdef PROBE32
   #define PROBE_DLL  L"6DOFProbe32.dll"
-  #define APP_TITLE  L"6DOF Injector"
-  #define ARCH_BADGE L"32-BIT"
+  #define RUNTIME_DLL L"6DOFRuntime32.dll"
+  #define APP_TITLE  L"6DOF Injector / Camera AOB Extractor"
+  #define ARCH_BADGE L"UNIFIED"
   #define SELF64     false
 #else
   #define PROBE_DLL  L"6DOFProbe.dll"
-  #define APP_TITLE  L"6DOF Injector"
-  #define ARCH_BADGE L"64-BIT"
+  #define RUNTIME_DLL L"6DOFRuntime.dll"
+  #define APP_TITLE  L"6DOF Injector / Camera AOB Extractor"
+  #define ARCH_BADGE L"UNIFIED"
   #define SELF64     true
 #endif
 
-enum { IDC_COMBO=1001, IDC_REFRESH, IDC_INJECT, IDC_STATUS, IDC_SEARCH, IDC_AUTO };
-static HWND g_combo, g_refresh, g_inject, g_status, g_search, g_auto;
+enum { IDC_COMBO=1001, IDC_REFRESH, IDC_INJECT, IDC_STATUS, IDC_SEARCH, IDC_AUTO, IDC_WASD, IDC_APPLY, IDC_ARCH, IDC_AGGR, IDC_CAMHJ, IDC_FOVHJ, IDC_HJRETRY, IDC_ROTHJ };
+static HWND g_combo, g_refresh, g_inject, g_status, g_search, g_auto, g_wasd, g_apply, g_arch, g_aggr, g_camhj, g_fovhj, g_hjretry, g_rothj;
 static HFONT g_font, g_fontBtn, g_fontTitle, g_fontSmall;
 static HBRUSH g_brBg, g_brEdit, g_brHdr;
 
@@ -45,7 +47,8 @@ static const COLORREF
     CL_REDH   = RGB(238,72,76),
     CL_REDD   = RGB(176,34,38),
     CL_CYAN   = RGB(60,222,238),   // title "6DOF"
-    CL_TRED   = RGB(235,58,62);    // title "INJECTOR"
+    CL_TRED   = RGB(235,58,62),    // title "INJECTOR"
+    CL_VIOLET = RGB(176,138,255);  // title "Camera AOB Extractor"
 
 struct Proc { std::wstring name; DWORD pid; };
 static std::vector<Proc> g_procs, g_shown;
@@ -102,7 +105,14 @@ static LRESULT CALLBACK btnProc(HWND h, UINT m, WPARAM w, LPARAM l){
     return CallWindowProcW(b->orig,h,m,w,l);
 }
 static Btn g_bRefresh{L"Refresh",false}, g_bInject{L"INJECT  \u25B6",false,true};
-static Btn g_bAuto{L"Auto-run deep scans (memory + differential) after detection",false,false,true,false};
+static Btn g_bAuto{L"Auto-run deep scans + auto-move the camera (drives the mouse) after detection",false,false,true,false};
+static Btn g_bWasd{L"Auto-move character with WASD (randomized; needs the box above)",false,false,true,false};
+static Btn g_bAggr{L"Aggressive deep probe (3rd log): stronger AOB + FOV hunter  \u2192  6DOF-<game>.aggressive.log",false,false,true,false};
+static Btn g_bRotHj{L"Rotation HIJACK: pitch/yaw/roll - find which candidate really rotates the camera",false,false,true,true};
+static Btn g_bCamHj{L"Camera HIJACK: nudge every candidate's X/Y/Z to find which one really moves the camera",false,false,true,true};
+static Btn g_bFovHj{L"FOV HIJACK: drive the FOV up/down on each candidate to find the real FOV field",false,false,true,true};
+static Btn g_bHjRetry{L"Auto-retry hijack until it LANDS: loop + re-scan until a candidate really moves the camera / FOV",false,false,true,true};
+static Btn g_bApply{L"APPLY MODE: inject the head-tracking runtime instead of the probe (after you have a profile)",false,false,true,false};
 static void makeButton(HWND h, Btn* b){ b->orig=(WNDPROC)SetWindowLongPtrW(h,GWLP_WNDPROC,(LONG_PTR)btnProc);
     SetWindowLongPtrW(h,GWLP_USERDATA,(LONG_PTR)b); }
 
@@ -170,8 +180,8 @@ static bool injectInto(DWORD pid, const wchar_t* dll, std::wstring& err) {
     HANDLE p=OpenProcess(PROCESS_CREATE_THREAD|PROCESS_QUERY_INFORMATION|PROCESS_VM_OPERATION|PROCESS_VM_WRITE|PROCESS_VM_READ,FALSE,pid);
     if (!p){ err=L"OpenProcess failed - try running the injector as Administrator."; return false; }
     BOOL wow=FALSE; IsWow64Process(p,&wow); bool target32=wow;
-    if (SELF64 && target32){ err=L"That game is 32-bit - use 6DOFInjectGUI32.exe instead."; CloseHandle(p); return false; }
-    if (!SELF64 && !target32){ err=L"That game is 64-bit - use 6DOFInjectGUI.exe instead."; CloseHandle(p); return false; }
+    if (SELF64 && target32){ err=L"That game is actually 32-bit - set the dropdown to 'Auto-detect' (it will delegate automatically)."; CloseHandle(p); return false; }
+    if (!SELF64 && !target32){ err=L"That game is actually 64-bit - set the dropdown to 'Auto-detect' (it will delegate automatically)."; CloseHandle(p); return false; }
     size_t bytes=(wcslen(dll)+1)*sizeof(wchar_t);
     void* remote=VirtualAllocEx(p,nullptr,bytes,MEM_COMMIT|MEM_RESERVE,PAGE_READWRITE);
     if (!remote){ err=L"VirtualAllocEx failed."; CloseHandle(p); return false; }
@@ -184,27 +194,69 @@ static bool injectInto(DWORD pid, const wchar_t* dll, std::wstring& err) {
     if (ec==0){ err=L"LoadLibrary returned 0 - the DLL didn't load (wrong arch, or missing dependency)."; return false; }
     return true;
 }
+// Cross-arch injection: a 64-bit process can't CreateRemoteThread into a 32-bit (WOW64) target and vice-versa.
+// So when the chosen target arch isn't this GUI's arch, delegate to the bundled matching-arch CLI injector.
+static bool delegateCLI(DWORD pid, bool wantRuntime, bool target32, std::wstring& err){
+    wchar_t self[MAX_PATH]={0}; GetModuleFileNameW(nullptr,self,MAX_PATH); if(wchar_t* s=wcsrchr(self,L'\\')) *(s+1)=0;
+    std::wstring cli=std::wstring(self)+(target32?L"6DOFInject32.exe":L"6DOFInject.exe");
+    if(GetFileAttributesW(cli.c_str())==INVALID_FILE_ATTRIBUTES){
+        err=std::wstring(target32?L"6DOFInject32.exe":L"6DOFInject.exe")+L" not found next to this exe (needed for the other architecture)."; return false; }
+    wchar_t cmd[MAX_PATH+64]; _snwprintf_s(cmd,MAX_PATH+64,_TRUNCATE,L"\"%s\" %lu%s",cli.c_str(),pid,wantRuntime?L" --runtime":L"");
+    STARTUPINFOW si{}; si.cb=sizeof(si); PROCESS_INFORMATION pi{};
+    if(!CreateProcessW(nullptr,cmd,nullptr,nullptr,FALSE,CREATE_NO_WINDOW,nullptr,self,&si,&pi)){ err=L"failed to launch the matching-arch CLI injector."; return false; }
+    WaitForSingleObject(pi.hProcess,20000); DWORD ec=1; GetExitCodeProcess(pi.hProcess,&ec);
+    CloseHandle(pi.hThread); CloseHandle(pi.hProcess);
+    if(ec!=0){ err=L"the matching-arch CLI injector reported a failure (try running as Administrator)."; return false; }
+    return true;
+}
+// arch selection: 0=auto-detect, 1=force 64-bit, 2=force 32-bit
+static int chosenArch(){ int s=(int)SendMessageW(g_arch,CB_GETCURSEL,0,0); return s<0?0:s; }
 static void doInject(HWND) {
     int sel=(int)SendMessageW(g_combo,CB_GETCURSEL,0,0);
     if (sel<0 || sel>=(int)g_shown.size()){ statusf(L"Pick a process first."); return; }
     Proc pr=g_shown[sel];
+    bool applyMode=g_bApply.checked;
+    // decide the TARGET arch: auto-detect from the process, or honor the dropdown override
+    bool target32;
+    { int ca=chosenArch();
+      if(ca==1) target32=false; else if(ca==2) target32=true;
+      else { HANDLE q=OpenProcess(PROCESS_QUERY_INFORMATION,FALSE,pr.pid); BOOL wow=FALSE; if(q){ IsWow64Process(q,&wow); CloseHandle(q); } target32=wow; } }
     wchar_t self[MAX_PATH]={0}; GetModuleFileNameW(nullptr,self,MAX_PATH);
     if (wchar_t* s=wcsrchr(self,L'\\')) *(s+1)=0;
-    wchar_t dll[MAX_PATH]; wcscpy_s(dll,MAX_PATH,self); wcscat_s(dll,MAX_PATH,PROBE_DLL);
-    if (GetFileAttributesW(dll)==INVALID_FILE_ATTRIBUTES){ statusf(L"ERROR: %s not found next to this exe.",PROBE_DLL); return; }
-    // write the GUI->probe config flag next to the DLL so the probe knows whether to auto-run the deep scans
-    wchar_t cfg[MAX_PATH]; wcscpy_s(cfg,MAX_PATH,self); wcscat_s(cfg,MAX_PATH,L"6DOF.cfg");
-    if(HANDLE cf=CreateFileW(cfg,GENERIC_WRITE,0,nullptr,CREATE_ALWAYS,0,nullptr); cf!=INVALID_HANDLE_VALUE){
-        const char* line=g_bAuto.checked?"auto_extra_tests=1\n":"auto_extra_tests=0\n";
-        DWORD wr; WriteFile(cf,line,(DWORD)strlen(line),&wr,nullptr); CloseHandle(cf); }
-    statusf(L"Injecting into %s [pid %lu]  (auto deep scans: %s) ...",pr.name.c_str(),pr.pid,g_bAuto.checked?L"ON":L"off");
+    // write the GUI->probe config flag next to the DLLs (read by whichever arch's probe loads)
+    { wchar_t cfg[MAX_PATH]; wcscpy_s(cfg,MAX_PATH,self); wcscat_s(cfg,MAX_PATH,L"6DOF.cfg");
+      if(HANDLE cf=CreateFileW(cfg,GENERIC_WRITE,0,nullptr,CREATE_ALWAYS,0,nullptr); cf!=INVALID_HANDLE_VALUE){
+        char cfgbuf[224]; int cl=snprintf(cfgbuf,sizeof(cfgbuf),"auto_extra_tests=%d\nauto_wasd=%d\naggressive=%d\nrot_hijack=%d\ncam_hijack=%d\nfov_hijack=%d\nhijack_retry=%d\n",
+            g_bAuto.checked?1:0, (g_bAuto.checked&&g_bWasd.checked)?1:0,
+            g_bAggr.checked?1:0, g_bRotHj.checked?1:0, g_bCamHj.checked?1:0, g_bFovHj.checked?1:0, g_bHjRetry.checked?1:0);
+        DWORD wr; WriteFile(cf,cfgbuf,(DWORD)cl,&wr,nullptr); CloseHandle(cf); } }
+    const wchar_t* archStr = target32?L"32-bit":L"64-bit";
+    bool native = (SELF64 && !target32) || (!SELF64 && target32);     // can this GUI inject the target directly?
     std::wstring err;
-    if (injectInto(pr.pid,dll,err)) {
-        statusf(L"OK - injected. The probe AUTO-RUNS its discovery pipeline ~5s in.");
-        statusf(L"Be in normal gameplay (not a menu). WATCH THE SCREEN: a brief camera sweep = it found the real camera.");
-        if(g_bAuto.checked) statusf(L"Auto deep scans ON: memory scan + differential + report run automatically after detection (move the camera when asked).");
-        else statusf(L"Keys in-game:  INSERT re-run  \u00B7  END report  \u00B7  HOME memory scan  \u00B7  F7/F8 differential.");
-        statusf(L"Output folder:  .\\6DOF Output\\   ->  6DOF-<game>.log  +  <game>.exe.6dof.json (runtime profile).");
+    bool ok;
+    if(native){
+        const wchar_t* DLL_NAME = applyMode?RUNTIME_DLL:PROBE_DLL;
+        wchar_t dll[MAX_PATH]; wcscpy_s(dll,MAX_PATH,self); wcscat_s(dll,MAX_PATH,DLL_NAME);
+        if (GetFileAttributesW(dll)==INVALID_FILE_ATTRIBUTES){ statusf(L"ERROR: %s not found next to this exe.",DLL_NAME); return; }
+        statusf(L"Injecting %s (%s) into %s [pid %lu] ...",DLL_NAME,archStr,pr.name.c_str(),pr.pid);
+        ok=injectInto(pr.pid,dll,err);
+    } else {
+        statusf(L"Target is %s; delegating to %s for %s injection into %s [pid %lu] ...",
+            archStr, target32?L"6DOFInject32.exe":L"6DOFInject.exe", applyMode?L"runtime":L"probe", pr.name.c_str(), pr.pid);
+        ok=delegateCLI(pr.pid,applyMode,target32,err);
+    }
+    if (ok) {
+        if(applyMode){
+            statusf(L"OK - runtime injected. It loads <game>.6dof.json, runs a cave SELF-TEST, then applies OpenTrack head pose.");
+            statusf(L"In-game:  F8 toggle on/off  \u00B7  F9 recenter  \u00B7  F10 invert yaw  \u00B7  F11 invert pitch.");
+            statusf(L"Make sure OpenTrack is sending UDP to 127.0.0.1:4242, and that <game>.exe.6dof.json sits next to the game exe.");
+        } else {
+            statusf(L"OK - injected. The probe AUTO-RUNS its discovery pipeline ~5s in.");
+            statusf(L"Be in normal gameplay (not a menu). WATCH THE SCREEN: a brief camera sweep = it found the real camera.");
+            if(g_bAuto.checked) statusf(L"Auto deep scans ON: memory scan + differential + report run automatically after detection (move the camera when asked).");
+            else statusf(L"Keys in-game:  INSERT re-run  \u00B7  END report  \u00B7  HOME memory scan  \u00B7  F7/F8 differential.");
+            statusf(L"Output folder:  .\\6DOF Output\\   ->  6DOF-<game>.log  +  <game>.exe.6dof.json (runtime profile).");
+        }
         startTail(pr.name);   // stream the probe's findings live into this window
     } else statusf(L"FAILED: %s", err.c_str());
 }
@@ -222,25 +274,48 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         g_fontBtn  =CreateFontW(-18,0,0,0,FW_SEMIBOLD,0,0,0,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Segoe UI");
         g_fontTitle=CreateFontW(-26,0,0,0,FW_BOLD,0,0,0,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Segoe UI");
         g_fontSmall=CreateFontW(-12,0,0,0,FW_NORMAL,0,0,0,DEFAULT_CHARSET,0,0,CLEARTYPE_QUALITY,0,L"Segoe UI");
-        HINSTANCE hi=((LPCREATESTRUCT)lp)->hInstance; const int PAD=20, W=540;
-        CreateWindowExW(0,L"STATIC",L"FILTER",WS_CHILD|WS_VISIBLE,PAD,92,200,16,hwnd,0,hi,0);
+        HINSTANCE hi=((LPCREATESTRUCT)lp)->hInstance; const int PAD=20, W=700;
+        CreateWindowExW(0,L"STATIC",L"TARGET ARCHITECTURE",WS_CHILD|WS_VISIBLE,PAD,92,300,16,hwnd,0,hi,0);
+        g_arch=CreateWindowExW(0,L"COMBOBOX",L"",WS_CHILD|WS_VISIBLE|WS_TABSTOP|CBS_DROPDOWNLIST,
+                                PAD,112,320,200,hwnd,(HMENU)IDC_ARCH,hi,0);
+        SendMessageW(g_arch,CB_ADDSTRING,0,(LPARAM)L"  Auto-detect (recommended)");
+        SendMessageW(g_arch,CB_ADDSTRING,0,(LPARAM)L"  64-bit game");
+        SendMessageW(g_arch,CB_ADDSTRING,0,(LPARAM)L"  32-bit game");
+        SendMessageW(g_arch,CB_SETCURSEL,0,0);
+        CreateWindowExW(0,L"STATIC",L"FILTER",WS_CHILD|WS_VISIBLE,PAD,156,200,16,hwnd,0,hi,0);
         g_search=CreateWindowExW(0,L"EDIT",L"",WS_CHILD|WS_VISIBLE|WS_TABSTOP|ES_AUTOHSCROLL,
-                                PAD,112,330,32,hwnd,(HMENU)IDC_SEARCH,hi,0);
+                                PAD,176,W-2*PAD-160,32,hwnd,(HMENU)IDC_SEARCH,hi,0);
         g_refresh=CreateWindowExW(0,L"BUTTON",L"Refresh",WS_CHILD|WS_VISIBLE|WS_TABSTOP,
-                                W-PAD-150,112,150,32,hwnd,(HMENU)IDC_REFRESH,hi,0);
-        CreateWindowExW(0,L"STATIC",L"TARGET PROCESS",WS_CHILD|WS_VISIBLE,PAD,156,260,16,hwnd,0,hi,0);
+                                W-PAD-150,176,150,32,hwnd,(HMENU)IDC_REFRESH,hi,0);
+        CreateWindowExW(0,L"STATIC",L"TARGET PROCESS",WS_CHILD|WS_VISIBLE,PAD,220,260,16,hwnd,0,hi,0);
         g_combo=CreateWindowExW(0,L"COMBOBOX",L"",WS_CHILD|WS_VISIBLE|WS_TABSTOP|CBS_DROPDOWNLIST|WS_VSCROLL,
-                                PAD,176,W-2*PAD,420,hwnd,(HMENU)IDC_COMBO,hi,0);
+                                PAD,240,W-2*PAD,420,hwnd,(HMENU)IDC_COMBO,hi,0);
         g_auto=CreateWindowExW(0,L"BUTTON",L"",WS_CHILD|WS_VISIBLE|WS_TABSTOP,
-                                PAD,216,W-2*PAD,24,hwnd,(HMENU)IDC_AUTO,hi,0);
+                                PAD,288,W-2*PAD,24,hwnd,(HMENU)IDC_AUTO,hi,0);
+        g_wasd=CreateWindowExW(0,L"BUTTON",L"",WS_CHILD|WS_VISIBLE|WS_TABSTOP,
+                                PAD,316,W-2*PAD,24,hwnd,(HMENU)IDC_WASD,hi,0);
+        g_aggr=CreateWindowExW(0,L"BUTTON",L"",WS_CHILD|WS_VISIBLE|WS_TABSTOP,
+                                PAD,344,W-2*PAD,24,hwnd,(HMENU)IDC_AGGR,hi,0);
+        g_rothj=CreateWindowExW(0,L"BUTTON",L"",WS_CHILD|WS_VISIBLE|WS_TABSTOP,
+                                PAD,372,W-2*PAD,24,hwnd,(HMENU)IDC_ROTHJ,hi,0);
+        g_camhj=CreateWindowExW(0,L"BUTTON",L"",WS_CHILD|WS_VISIBLE|WS_TABSTOP,
+                                PAD,400,W-2*PAD,24,hwnd,(HMENU)IDC_CAMHJ,hi,0);
+        g_fovhj=CreateWindowExW(0,L"BUTTON",L"",WS_CHILD|WS_VISIBLE|WS_TABSTOP,
+                                PAD,428,W-2*PAD,24,hwnd,(HMENU)IDC_FOVHJ,hi,0);
+        g_hjretry=CreateWindowExW(0,L"BUTTON",L"",WS_CHILD|WS_VISIBLE|WS_TABSTOP,
+                                PAD,456,W-2*PAD,24,hwnd,(HMENU)IDC_HJRETRY,hi,0);
+        g_apply=CreateWindowExW(0,L"BUTTON",L"",WS_CHILD|WS_VISIBLE|WS_TABSTOP,
+                                PAD,484,W-2*PAD,24,hwnd,(HMENU)IDC_APPLY,hi,0);
         g_inject=CreateWindowExW(0,L"BUTTON",L"",WS_CHILD|WS_VISIBLE|WS_TABSTOP,
-                                PAD,248,W-2*PAD,50,hwnd,(HMENU)IDC_INJECT,hi,0);
+                                PAD,516,W-2*PAD,52,hwnd,(HMENU)IDC_INJECT,hi,0);
         g_status=CreateWindowExW(0,L"EDIT",L"",WS_CHILD|WS_VISIBLE|WS_VSCROLL|ES_MULTILINE|ES_READONLY|ES_AUTOVSCROLL,
-                                PAD+10,324,W-2*PAD-20,148,hwnd,(HMENU)IDC_STATUS,hi,0);
+                                PAD+10,592,W-2*PAD-20,224,hwnd,(HMENU)IDC_STATUS,hi,0);
         SendMessageW(g_search,WM_SETFONT,(WPARAM)g_font,TRUE);
         SendMessageW(g_combo,WM_SETFONT,(WPARAM)g_font,TRUE);
+        SendMessageW(g_arch,WM_SETFONT,(WPARAM)g_font,TRUE);
         SendMessageW(g_status,WM_SETFONT,(WPARAM)g_font,TRUE);
-        makeButton(g_refresh,&g_bRefresh); makeButton(g_inject,&g_bInject); makeButton(g_auto,&g_bAuto);
+        makeButton(g_refresh,&g_bRefresh); makeButton(g_inject,&g_bInject); makeButton(g_auto,&g_bAuto); makeButton(g_wasd,&g_bWasd); makeButton(g_apply,&g_bApply);
+        makeButton(g_aggr,&g_bAggr); makeButton(g_rothj,&g_bRotHj); makeButton(g_camhj,&g_bCamHj); makeButton(g_fovhj,&g_bFovHj); makeButton(g_hjretry,&g_bHjRetry);
         BOOL dark=TRUE; DwmSetWindowAttribute(hwnd,20,&dark,sizeof(dark)); DwmSetWindowAttribute(hwnd,19,&dark,sizeof(dark));
         refreshProcs();
         statusf(L"Ready. Pick the game and click INJECT.");
@@ -257,15 +332,17 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         HBRUSH bg=CreateSolidBrush(CL_BG); FillRect(dc,&cr,bg); DeleteObject(bg);
         RECT hr={0,0,cr.right,76}; FillRect(dc,&hr,g_brHdr);
         SetBkMode(dc,TRANSPARENT);
-        SelectObject(dc,g_fontTitle); SetTextColor(dc,CL_CYAN); TextOutW(dc,20,16,L"6DOF",4);
+        SelectObject(dc,g_fontTitle); SetTextColor(dc,CL_CYAN); TextOutW(dc,20,12,L"6DOF",4);
         SIZE sz; GetTextExtentPoint32W(dc,L"6DOF",4,&sz);
-        SetTextColor(dc,CL_TRED); TextOutW(dc,20+sz.cx+8,16,L"INJECTOR",8);
+        SetTextColor(dc,CL_TRED); TextOutW(dc,20+sz.cx+8,12,L"INJECTOR",8);
+        SelectObject(dc,g_fontBtn); SetTextColor(dc,CL_VIOLET); TextOutW(dc,21,46,L"Camera AOB Extractor",20);
+        SIZE cs; GetTextExtentPoint32W(dc,L"Camera AOB Extractor",20,&cs);
         SelectObject(dc,g_fontSmall); SetTextColor(dc,CL_MUTE);
-        TextOutW(dc,21,50,L"Camera discovery  +  head-tracking probe",40);
+        TextOutW(dc,21+cs.cx+10,51,L"\u00B7  camera discovery + head-tracking probe",42);
         RECT bd={cr.right-92,18,cr.right-20,42}; roundOutline(dc,bd,CL_ACC,12);
         SetTextColor(dc,CL_ACC); DrawTextW(dc,ARCH_BADGE,-1,&bd,DT_CENTER|DT_VCENTER|DT_SINGLELINE);
         HPEN ap=CreatePen(PS_SOLID,2,CL_ACC); HGDIOBJ opn=SelectObject(dc,ap); MoveToEx(dc,0,76,0); LineTo(dc,cr.right,76); SelectObject(dc,opn); DeleteObject(ap);
-        RECT sp={20,318,cr.right-20,478}; roundOutline(dc,sp,CL_BORDER,10);
+        RECT sp={20,584,cr.right-20,824}; roundOutline(dc,sp,CL_BORDER,10);
         SelectObject(dc,g_fontSmall); SetTextColor(dc,CL_MUTE);
         TextOutW(dc,20,cr.bottom-24,L"Loopback UDP 4242  \u00B7  OpenTrack  \u00B7  log + .6dof.json profile",58);
         EndPaint(hwnd,&ps); return 0;
@@ -275,7 +352,16 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (LOWORD(wp)==IDC_REFRESH){ refreshProcs(); statusf(L"Process list refreshed (%zu).",g_procs.size()); }
         else if (LOWORD(wp)==IDC_INJECT){ doInject(hwnd); }
         else if (LOWORD(wp)==IDC_AUTO){ statusf(L"Auto deep scans %s. Applies on the next INJECT.",g_bAuto.checked?L"ENABLED":L"disabled"); }
+        else if (LOWORD(wp)==IDC_WASD){ statusf(L"Auto WASD character movement %s. (Needs 'Auto-run deep scans' on; applies on next INJECT.)",g_bWasd.checked?L"ENABLED":L"disabled"); }
+        else if (LOWORD(wp)==IDC_AGGR){ statusf(L"Aggressive deep probe %s. Adds a 3rd, harder-hitting log (6DOF-<game>.aggressive.log): longer write-watch, more candidates, wider FOV hunt. Applies on next INJECT.",g_bAggr.checked?L"ENABLED":L"disabled"); }
+        else if (LOWORD(wp)==IDC_ROTHJ){ statusf(L"Rotation HIJACK %s. After detection the probe rotates each candidate (pitch/yaw/roll) and logs which one actually turns the camera, in all three logs. Applies on next INJECT.",g_bRotHj.checked?L"ENABLED":L"disabled"); }
+        else if (LOWORD(wp)==IDC_CAMHJ){ statusf(L"Camera HIJACK %s. After detection the probe nudges each candidate's X/Y/Z and logs which one actually moves the camera (per axis), in all three logs. Applies on next INJECT.",g_bCamHj.checked?L"ENABLED":L"disabled"); }
+        else if (LOWORD(wp)==IDC_FOVHJ){ statusf(L"FOV HIJACK %s. After detection the probe drives each FOV candidate up/down and logs which one really changes the rendered FOV, in all three logs. Applies on next INJECT.",g_bFovHj.checked?L"ENABLED":L"disabled"); }
+        else if (LOWORD(wp)==IDC_HJRETRY){ statusf(L"Auto-retry hijack %s. Keeps re-scanning and re-running the camera/FOV hijack on a loop until a candidate ACTUALLY moves the camera / changes the FOV, then logs the landing (chime). Needs Camera and/or FOV HIJACK ticked. Applies on next INJECT.",g_bHjRetry.checked?L"ENABLED":L"disabled"); }
         else if (LOWORD(wp)==IDC_SEARCH && HIWORD(wp)==EN_CHANGE){ applyFilter(); }
+        else if (LOWORD(wp)==IDC_ARCH && HIWORD(wp)==CBN_SELCHANGE){ int a=chosenArch();
+            statusf(L"Target architecture: %s.%s", a==0?L"Auto-detect":a==1?L"forced 64-bit":L"forced 32-bit",
+                a==0?L"":L" (Auto-detect is safest; a wrong choice will fail to load.)"); }
         return 0;
     case WM_DESTROY:
         DeleteObject(g_brBg); DeleteObject(g_brEdit); DeleteObject(g_brHdr);
@@ -292,7 +378,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, LPWSTR, int show) {
     wc.hIcon=LoadIconW(hInst,MAKEINTRESOURCEW(1));
     wc.hIconSm=(HICON)LoadImageW(hInst,MAKEINTRESOURCEW(1),IMAGE_ICON,16,16,0);
     RegisterClassExW(&wc);
-    int W=540,H=548;
+    int W=700,H=912;
     int sx=(GetSystemMetrics(SM_CXSCREEN)-W)/2, sy=(GetSystemMetrics(SM_CYSCREEN)-H)/2;
     HWND hwnd=CreateWindowExW(0,wc.lpszClassName,APP_TITLE,
         (WS_OVERLAPPEDWINDOW & ~WS_THICKFRAME & ~WS_MAXIMIZEBOX),

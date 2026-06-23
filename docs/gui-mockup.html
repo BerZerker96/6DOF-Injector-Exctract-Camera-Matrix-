@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>6DOF Injector / Camera AOB Extractor — GUI mockup</title>
+<style>
+  /* exact palette from injectgui.cpp */
+  :root{
+    --bg:#16171B; --hdr:#1C1E24; --panel:#22242B; --panelh:#2C2F38;
+    --edit:#101114; --border:#323640; --txt:#E4E6EC; --mute:#8A909C;
+    --acc:#3096FF; --acch:#52B0FF; --accd:#247CD6;
+    --red:#D63034; --redh:#EE484C;
+    --cyan:#3CDEEE; --tred:#EB3A3E; --violet:#B08AFF;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; background:#0c0d10; color:var(--txt);
+    font-family:"Segoe UI",system-ui,-apple-system,sans-serif;
+    display:flex; align-items:center; justify-content:center; padding:32px;
+    min-height:100vh;
+  }
+  .scene{display:flex;flex-direction:column;align-items:center;gap:18px}
+
+  /* ---- the window ---- */
+  .win{
+    width:700px; border-radius:8px; overflow:hidden;
+    box-shadow:0 30px 80px rgba(0,0,0,.6), 0 2px 0 rgba(255,255,255,.03) inset;
+    border:1px solid #2a2c33; background:var(--bg);
+  }
+  /* native dark title bar (no maximize, matching WS_OVERLAPPEDWINDOW & ~MAXIMIZE) */
+  .titlebar{
+    height:32px; background:#101115; display:flex; align-items:center;
+    padding:0 10px; gap:8px; border-bottom:1px solid #000;
+  }
+  .titlebar .ico{width:14px;height:14px;border-radius:3px;
+    background:conic-gradient(from 210deg,var(--cyan),var(--acc),var(--violet),var(--cyan));}
+  .titlebar .t{font-size:12px;color:#c9ccd4;font-weight:600;letter-spacing:.2px}
+  .titlebar .sp{flex:1}
+  .titlebar .btn{width:34px;height:32px;display:grid;place-items:center;color:#9aa0ac;font-size:12px}
+  .titlebar .btn:hover{background:#26282f;color:#fff}
+  .titlebar .btn.x:hover{background:#d63034;color:#fff}
+
+  /* ---- header band (0..76 client) ---- */
+  .client{position:relative;height:876px;background:var(--bg)}
+  .header{position:absolute;left:0;top:0;right:0;height:76px;background:var(--hdr)}
+  .header::after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--acc)}
+  .title{position:absolute;left:20px;top:8px;font-size:26px;font-weight:800;letter-spacing:.5px;line-height:1}
+  .title .c{color:var(--cyan)} .title .r{color:var(--tred);margin-left:8px}
+  .subtitle{position:absolute;left:21px;top:44px;display:flex;align-items:baseline;gap:10px}
+  .subtitle .v{color:var(--violet);font-size:18px;font-weight:600;letter-spacing:.2px}
+  .subtitle .tag{color:var(--mute);font-size:12px}
+  .badge{position:absolute;right:20px;top:18px;width:72px;height:24px;border:1px solid var(--acc);
+    border-radius:12px;display:grid;place-items:center;color:var(--acc);font-size:11px;font-weight:600;letter-spacing:1px}
+
+  /* ---- absolutely-positioned controls at the source y-coords ---- */
+  .lbl{position:absolute;left:20px;font-size:12px;color:var(--mute);letter-spacing:.6px;font-weight:600}
+  .ctl{position:absolute;left:20px;height:32px;background:var(--edit);border:1px solid var(--border);
+    border-radius:6px;color:var(--txt);font-size:14px;display:flex;align-items:center;padding:0 12px}
+  .combo::after{content:"\25BE";position:absolute;right:12px;color:var(--mute);font-size:11px}
+  .combo{position:absolute;left:20px;height:32px;background:var(--edit);border:1px solid var(--border);
+    border-radius:6px;color:var(--txt);font-size:14px;display:flex;align-items:center;padding:0 12px}
+  .ghost{position:absolute;height:32px;border:1px solid var(--border);background:var(--panel);
+    border-radius:6px;color:var(--txt);font-size:14px;display:grid;place-items:center;font-weight:500}
+  .place{color:var(--mute)}
+
+  /* checkbox row */
+  .chk{position:absolute;left:20px;width:660px;height:24px;display:flex;align-items:center;gap:10px;font-size:14px;color:var(--mute)}
+  .box{width:18px;height:18px;border-radius:5px;border:1px solid var(--border);background:var(--edit);
+    flex:0 0 18px;position:relative}
+  .chk.on .box{background:var(--acc);border-color:var(--acc)}
+  .chk.on .box::after{content:"";position:absolute;left:4px;top:2px;width:6px;height:10px;
+    border:2px solid #fff;border-top:0;border-left:0;transform:rotate(40deg)}
+  .chk.on .lab{color:#c5c9d2}
+  .hk{color:var(--violet);font-weight:600}
+
+  /* inject (red, danger) */
+  .inject{position:absolute;left:20px;width:660px;height:52px;background:var(--red);border-radius:8px;
+    display:grid;place-items:center;color:#fff;font-size:18px;font-weight:600;letter-spacing:.5px;
+    box-shadow:0 6px 18px rgba(214,48,52,.28)}
+
+  /* status panel */
+  .spanel{position:absolute;left:20px;width:660px;border:1px solid var(--border);border-radius:10px}
+  .status{position:absolute;left:30px;top:592px;width:640px;height:224px;background:var(--edit);
+    border-radius:8px;border:1px solid #1c1d22;padding:12px 14px;overflow:hidden;
+    font-size:12.5px;line-height:1.55;color:#cfd3db}
+  .status .ok{color:#7fd6a0} .status .acc{color:var(--acc)} .status .vi{color:var(--violet)}
+  .status .mut{color:var(--mute)} .status .red{color:#ff8d90} .status .b{font-weight:700}
+
+  .footer{position:absolute;left:20px;bottom:8px;color:var(--mute);font-size:11px}
+
+  .caption{color:#8a909c;font-size:13px;max-width:700px;text-align:center;line-height:1.6}
+  .caption b{color:#c9ccd4}
+</style>
+</head>
+<body>
+<div class="scene">
+
+  <div class="win">
+    <!-- title bar -->
+    <div class="titlebar">
+      <div class="ico"></div>
+      <div class="t">6DOF Injector / Camera AOB Extractor</div>
+      <div class="sp"></div>
+      <div class="btn">&#x2012;</div>
+      <div class="btn x">&#x2715;</div>
+    </div>
+
+    <div class="client">
+      <!-- header -->
+      <div class="header">
+        <div class="title"><span class="c">6DOF</span><span class="r">INJECTOR</span></div>
+        <div class="subtitle">
+          <span class="v">Camera AOB Extractor</span>
+          <span class="tag">&middot;&nbsp; camera discovery + head-tracking probe</span>
+        </div>
+        <div class="badge">UNIFIED</div>
+      </div>
+
+      <!-- target architecture -->
+      <div class="lbl" style="top:92px">TARGET ARCHITECTURE</div>
+      <div class="combo" style="top:112px;width:320px">Auto-detect (recommended)</div>
+
+      <!-- filter + refresh -->
+      <div class="lbl" style="top:156px">FILTER</div>
+      <div class="ctl" style="top:176px;width:480px"><span class="place">type to narrow the process list&hellip;</span></div>
+      <div class="ghost" style="top:176px;left:530px;width:150px">Refresh</div>
+
+      <!-- target process -->
+      <div class="lbl" style="top:220px">TARGET PROCESS</div>
+      <div class="combo" style="top:240px;width:660px">&nbsp;Game.exe&nbsp;&nbsp; &middot;&nbsp; pid 12480</div>
+
+      <!-- checkboxes -->
+      <div class="chk"    style="top:288px"><span class="box"></span><span class="lab">Auto-run deep scans + auto-move the camera (drives the mouse) after detection</span></div>
+      <div class="chk"    style="top:316px"><span class="box"></span><span class="lab">Auto-move character with WASD (randomized; needs the box above)</span></div>
+      <div class="chk"    style="top:344px"><span class="box"></span><span class="lab">Aggressive deep probe (3rd log): stronger AOB + FOV hunter &rarr; 6DOF-&lt;game&gt;.aggressive.log</span></div>
+      <div class="chk on" style="top:372px"><span class="box"></span><span class="lab">Rotation HIJACK: pitch/yaw/roll &mdash; find which candidate really rotates the camera</span></div>
+      <div class="chk on" style="top:400px"><span class="box"></span><span class="lab">Camera HIJACK: nudge every candidate's X/Y/Z to find which one really moves the camera</span></div>
+      <div class="chk on" style="top:428px"><span class="box"></span><span class="lab">FOV HIJACK: drive the FOV up/down on each candidate to find the real FOV field</span></div>
+      <div class="chk on" style="top:456px"><span class="box"></span><span class="lab">Auto-retry hijack until it LANDS: loop + re-scan until a candidate really moves the camera / FOV</span></div>
+      <div class="chk"    style="top:484px"><span class="box"></span><span class="lab">APPLY MODE: inject the head-tracking runtime instead of the probe (after you have a profile)</span></div>
+
+      <!-- inject -->
+      <div class="inject" style="top:516px">INJECT &nbsp;&#x25B6;</div>
+
+      <!-- status -->
+      <div class="spanel" style="top:584px;height:240px"></div>
+      <div class="status">
+<span class="acc">Injecting 6DOFProbe.dll (64-bit) into Game.exe [pid 12480] &hellip;</span><br>
+<span class="ok">OK &mdash; injected.</span> The probe AUTO-RUNS its discovery pipeline ~5s in.<br>
+<span class="mut">Be in normal gameplay (not a menu). Watch the screen: a brief camera sweep = it found the real camera.</span><br>
+<span class="mut">--- live probe log (6DOF Output\6DOF-Game.log) ---</span><br>
+ROTATION HIJACK ON &middot; PLACEMENT HIJACK ON &middot; FOV HIJACK ON &middot; AUTO-RETRY ON<br>
+<span class="mut"># rotating each candidate's 3x3 by YAW&rarr;PITCH&rarr;ROLL, watching the live view&hellip;</span><br>
+<span class="vi b">*** ROTATION HIJACK LANDED on round 3 &mdash; candidate @0x1F3A0C40 rotates the camera. ***</span><br>
+<span class="vi b">*** CAMERA PLACEMENT HIJACK LANDED &mdash; X/Y/Z @ +0x30/0x34/0x38. ***</span><br>
+<span class="ok b">### HIJACK CONFIRMED &mdash; real camera verified live. Playing the success chime. &#x1F514;</span><br>
+<span class="mut">Output: 6DOF-Game.log &middot; 6DOF-Game.perframe.log &middot; Game.exe.6dof.json</span>
+      </div>
+
+      <div class="footer">Loopback UDP 4242 &nbsp;&middot;&nbsp; OpenTrack &nbsp;&middot;&nbsp; log + .6dof.json profile</div>
+    </div>
+  </div>
+
+  <div class="caption">
+    <b>6DOF Injector / Camera AOB Extractor</b> &mdash; the unified dark loader. The title keeps the cyan/red
+    <b>6DOF&nbsp;INJECTOR</b> wordmark; <b style="color:#B08AFF">Camera AOB Extractor</b> is set in violet beneath it.
+    The four checked boxes (Rotation / Camera / FOV hijack + Auto-retry) are <b>on by default</b>.
+  </div>
+
+</div>
+</body>
+</html>
