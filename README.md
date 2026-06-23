@@ -1,5 +1,7 @@
 <p align="center">
-  <img src="docs/banner.png" alt="6DOF Injector / Camera AOB Extractor" width="100%">
+
+<img width="1584" height="672" alt="1782205588882" src="https://github.com/user-attachments/assets/21b79c11-d521-4340-8726-4221a94a6f6d" />
+
 </p>
 
 <h1 align="center">6DOF Injector <span>/</span> Camera AOB Extractor</h1>
