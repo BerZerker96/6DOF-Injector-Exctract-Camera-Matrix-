@@ -27,19 +27,6 @@ profile to apply your **OpenTrack** head pose (rotation, position, and FOV) to t
 
 It works across **D3D9 / 10 / 11 / 12, OpenGL and Vulkan**, in both **64-bit and 32-bit** games.
 
-> **Current version: v5.16.** The active "move the camera to confirm" test is now **opt-in (default off)** - writing into a live game can crash it, so the default is safe read-only capture + the success chime (which does not depend on the move-test). Earlier notes: With no GPU oracle the probe now **actively moves the located camera** to confirm it: it writes yaw to the camera + pooled copies and reports **settable** (the write holds -> moving it works) vs **pooled** (the engine reverts it -> needs the writer-hook the runtime applies). Plus: A usable AOB on a no-GPU-oracle title (D3D12/Vulkan/pure-CPU) now **plays the success chime immediately** instead of waiting forever for a hijack that can't self-verify there. Plus: On no-GPU-view titles (D3D12/Vulkan/pure-CPU) the pipeline now runs the differential **automatically** (snapshot → wait-for-motion → delta → write-watch → profile), retrying until the camera locks - no F7/F8 needed - and the page-guard **slides a window across the whole transient-camera pool**. Plus: Works on **D3D12/Vulkan/GL** titles even with no GPU oracle: a **CPU projection
-> oracle** (the screen-aspect-matched projection in memory) restores the FOV ground-truth and `projection_convention`,
-> and **pooled/transient cameras** (e.g. Alan Wake Remastered) now get a write-AOB because the page-guard
-> auto-covers the whole view-matrix pool region and the watch includes the matrix mover. Capture is **cave-less by
-> default** (a hardware breakpoint reads the register out of
-> the exception context — no game code modified), with a hardened inline cave fallback (rip-relative relocation,
-> stop-the-world patch, read-back verify, clean uninstall). The mechanism is now **proven without a game**: a host
-> unit test (`test/`) checks the length-decoder and relocator against a real-mod corpus (27/27), and an opt-in
-> `SIXDOF_SELFTEST=1` runs an in-process HWBP + threaded-cave + uninstall proof on the target machine. Signatures
-> are **rebase-stable and `.pdata`-bounded**, and the **FOV is proven against the projection's true vertical FOV**
-> with its encoding solved (degrees / radians / tan-half / cot-half / factor-of-base), flagging the
-> *projection-only* case when FOV is baked into the matrix.
-
 <p align="center">
   <img src="docs/gui-mockup.png" alt="6DOF Injector / Camera AOB Extractor — GUI" width="78%">
 </p>
